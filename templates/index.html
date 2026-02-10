@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Monitor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>Job Monitor <span class="live-dot" id="live-dot" title="Auto-refresh active"></span></h1>
+    <div class="greeting" id="greeting"></div>
+    <div class="last-updated" id="last-updated"></div>
+  </div>
+  <div class="controls">
+    <label>Auto-refresh:</label>
+    <select id="interval-select" onchange="updateInterval()">
+      <option value="0">Off</option>
+      <option value="5">5s</option>
+      <option value="10" selected>10s</option>
+      <option value="30">30s</option>
+      <option value="60">60s</option>
+    </select>
+    <button id="refresh-btn" onclick="fetchJobs()">Refresh</button>
+  </div>
+</header>
+
+<div id="content">
+  <p style="color:var(--muted);text-align:center;padding:2rem 0;">Connecting to servers&hellip;</p>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Job Output</h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

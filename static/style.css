@@ -1,0 +1,390 @@
+:root {
+  --bg: #f5f7fa;
+  --card-bg: #fff;
+  --text: #1a1a2e;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #4f46e5;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 2rem;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.header-left h1 {
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.greeting {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+
+.last-updated {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  transition: opacity 0.3s;
+}
+
+/* ── Controls ────────────────────────────────────────── */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.controls label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.controls select {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  transition: border-color 0.2s;
+}
+
+.controls select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Live dot ────────────────────────────────────────── */
+
+.live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: none;
+  flex-shrink: 0;
+}
+
+.live-dot.active {
+  display: inline-block;
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ── Refresh button ──────────────────────────────────── */
+
+#refresh-btn {
+  padding: 0.5rem 1.2rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+#refresh-btn:hover {
+  background: #e9ecef;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+#refresh-btn:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+#refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ── Server cards ────────────────────────────────────── */
+
+.server-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.server-section.entering {
+  animation: card-in 0.35s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+.server-section.entering:nth-child(2) {
+  animation-delay: 0.06s;
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.server-section h2 {
+  font-size: 1.15rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Status dot ──────────────────────────────────────── */
+
+.status-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+.status-dot.ok    { background: #22c55e; }
+.status-dot.error { background: #ef4444; }
+
+.job-count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+/* ── Messages ────────────────────────────────────────── */
+
+.error-msg {
+  color: #dc2626;
+  font-size: 0.9rem;
+  padding: 0.75rem 1rem;
+  background: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+  line-height: 1.5;
+}
+
+.no-jobs {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 1.5rem 0;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ── Table ───────────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: #f9fafb; }
+
+/* ── Row enter animation ─────────────────────────────── */
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+tr.entering {
+  animation: row-in 0.25s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+/* ── Cell flash on value change ──────────────────────── */
+
+@keyframes cell-flash {
+  0%   { background: #eef2ff; }
+  100% { background: transparent; }
+}
+
+td.changed {
+  animation: cell-flash 0.8s ease-out;
+}
+
+/* ── State badges ────────────────────────────────────── */
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  transition: transform 0.15s;
+}
+
+.badge-running {
+  background: #dcfce7;
+  color: #166534;
+  animation: badge-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
+  50%      { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+}
+
+.badge-pending    { background: #fef9c3; color: #854d0e; }
+.badge-completing { background: #dbeafe; color: #1e40af; }
+.badge-failed     { background: #fee2e2; color: #991b1b; }
+.badge-cancelled  { background: #fee2e2; color: #991b1b; }
+.badge-other      { background: #f3f4f6; color: #374151; }
+
+/* ── Clickable rows ──────────────────────────────────── */
+
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #eef2ff; }
+tr.clickable:active td { background: #e0e7ff; }
+
+/* ── Spinner ─────────────────────────────────────────── */
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 0.4rem;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Modal ───────────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  transition: background 0.25s;
+}
+
+.modal-overlay.active {
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.modal {
+  background: var(--card-bg);
+  border-radius: 12px;
+  width: min(90vw, 800px);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  transform: scale(0.95) translateY(10px);
+  opacity: 0;
+  transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s;
+}
+
+.modal-overlay.active .modal {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 { font-size: 1rem; }
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-body pre {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.modal-body .loading-text {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Reduced motion ──────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

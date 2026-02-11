@@ -27,6 +27,33 @@ function nextLoadMsg() {
   return LOADING_MSGS[loadMsgIdx++ % LOADING_MSGS.length];
 }
 
+/* ── Name filter ─────────────────────────────────────── */
+
+let nameFilter = "";
+
+function applyNameFilter() {
+  nameFilter = document.getElementById("name-filter").value.toLowerCase();
+  const sections = document.querySelectorAll(".server-section");
+
+  sections.forEach((section) => {
+    const tbody = section.querySelector("tbody");
+    if (!tbody) return;
+
+    const rows = tbody.querySelectorAll("tr[data-jobid]");
+    rows.forEach((row) => {
+      const nameCell = row.querySelector("td[data-col='NAME']");
+      if (!nameCell) return;
+
+      const jobName = nameCell.textContent.toLowerCase();
+      if (nameFilter === "" || jobName.includes(nameFilter)) {
+        row.style.display = "";
+      } else {
+        row.style.display = "none";
+      }
+    });
+  });
+}
+
 /* ── Constants ───────────────────────────────────────── */
 
 const STATE_CLASSES = {
@@ -180,6 +207,70 @@ function patchRecentSection(section, serverData) {
   }
 }
 
+/* ── Config Modal ────────────────────────────────────── */
+
+let currentConfig = { recent_jobs_count: 5 };
+
+async function loadConfig() {
+  try {
+    const resp = await fetch("/api/config");
+    const config = await resp.json();
+    currentConfig = config;
+  } catch (err) {
+    console.error("Failed to load config:", err);
+  }
+}
+
+async function showConfigModal() {
+  const overlay = document.getElementById("config-overlay");
+  const input = document.getElementById("config-recent-count");
+
+  input.value = currentConfig.recent_jobs_count || 5;
+  overlay.classList.add("active");
+}
+
+function closeConfigModal(event) {
+  if (event && event.target !== document.getElementById("config-overlay")) return;
+  document.getElementById("config-overlay").classList.remove("active");
+}
+
+async function saveConfig() {
+  const input = document.getElementById("config-recent-count");
+  const count = parseInt(input.value);
+
+  if (isNaN(count) || count < 1 || count > 50) {
+    alert("Please enter a number between 1 and 50");
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recent_jobs_count: count })
+    });
+
+    const result = await resp.json();
+
+    if (result.success) {
+      currentConfig = result.config;
+      closeConfigModal();
+      fetchJobs(); // Refresh to apply new settings
+    } else {
+      alert("Failed to save config: " + (result.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Failed to save config: " + err.message);
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeModal();
+    closeConfigModal();
+  }
+});
+
 /* ── Modal ───────────────────────────────────────────── */
 
 function closeModal(event) {
@@ -203,19 +294,76 @@ async function showJobOutput(server, jobid, jobname) {
     const data = await resp.json();
     if (data.error) {
       body.innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`;
-    } else if (!data.output.trim()) {
-      body.innerHTML = '<div class="no-jobs">No output yet. The job may still be starting up.</div>';
-    } else {
-      body.innerHTML = `<pre>${escapeHtml(data.output)}</pre>`;
+      return;
     }
+
+    const hasStdout = data.stdout || data.stdout_error;
+    const hasStderr = data.stderr || data.stderr_error;
+
+    if (!hasStdout && !hasStderr) {
+      body.innerHTML = '<div class="no-jobs">No output files found. The job may still be starting up.</div>';
+      return;
+    }
+
+    // Build tabbed interface
+    let html = '<div class="log-tabs">';
+    if (hasStdout) {
+      html += '<button class="log-tab active" onclick="switchLogTab(event, \'stdout\')">stdout</button>';
+    }
+    if (hasStderr) {
+      html += `<button class="log-tab${!hasStdout ? ' active' : ''}" onclick="switchLogTab(event, 'stderr')">stderr</button>`;
+    }
+    html += '</div>';
+
+    // stdout content
+    if (hasStdout) {
+      html += '<div class="log-content active" data-log="stdout">';
+      if (data.stdout_path) {
+        html += `<div class="log-path">Path: <code>${escapeHtml(data.stdout_path)}</code></div>`;
+      }
+      if (data.stdout_error) {
+        html += `<div class="error-msg">${escapeHtml(data.stdout_error)}</div>`;
+      } else if (data.stdout && data.stdout.trim()) {
+        html += `<pre>${escapeHtml(data.stdout)}</pre>`;
+      } else {
+        html += '<div class="no-jobs">No stdout output yet.</div>';
+      }
+      html += '</div>';
+    }
+
+    // stderr content
+    if (hasStderr) {
+      html += `<div class="log-content${!hasStdout ? ' active' : ''}" data-log="stderr">`;
+      if (data.stderr_path) {
+        html += `<div class="log-path">Path: <code>${escapeHtml(data.stderr_path)}</code></div>`;
+      }
+      if (data.stderr_error) {
+        html += `<div class="error-msg">${escapeHtml(data.stderr_error)}</div>`;
+      } else if (data.stderr && data.stderr.trim()) {
+        html += `<pre>${escapeHtml(data.stderr)}</pre>`;
+      } else {
+        html += '<div class="no-jobs">No stderr output yet.</div>';
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
   } catch (err) {
     body.innerHTML = `<div class="error-msg">Failed to fetch output: ${escapeHtml(err.message)}</div>`;
   }
 }
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeModal();
-});
+function switchLogTab(event, logType) {
+  const tabs = document.querySelectorAll('.log-tab');
+  const contents = document.querySelectorAll('.log-content');
+
+  tabs.forEach(tab => tab.classList.remove('active'));
+  contents.forEach(content => content.classList.remove('active'));
+
+  event.target.classList.add('active');
+  document.querySelector(`.log-content[data-log="${logType}"]`).classList.add('active');
+}
+
 
 /* ── DOM diffing ─────────────────────────────────────── */
 
@@ -461,6 +609,11 @@ async function fetchJobs() {
     data.forEach((s) => { newPrev[s.server] = s; });
     prevData = newPrev;
 
+    // Reapply name filter after data update
+    if (nameFilter !== "") {
+      applyNameFilter();
+    }
+
     isFirstRender = false;
 
     document.getElementById("last-updated").textContent =
@@ -494,5 +647,7 @@ function updateInterval() {
 /* ── Init ────────────────────────────────────────────── */
 
 setGreeting();
-fetchJobs();
-updateInterval();
+loadConfig().then(() => {
+  fetchJobs();
+  updateInterval();
+});

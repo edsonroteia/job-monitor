@@ -15,6 +15,7 @@
     <div class="last-updated" id="last-updated"></div>
   </div>
   <div class="controls">
+    <input type="text" id="name-filter" placeholder="Filter by job name..." oninput="applyNameFilter()">
     <label>Auto-refresh:</label>
     <select id="interval-select" onchange="updateInterval()">
       <option value="0">Off</option>
@@ -24,6 +25,7 @@
       <option value="60">60s</option>
     </select>
     <button id="refresh-btn" onclick="fetchJobs()">Refresh</button>
+    <button id="config-btn" onclick="showConfigModal()" title="Settings">⚙</button>
   </div>
 </header>
 
@@ -38,6 +40,26 @@
       <button class="modal-close" onclick="closeModal()">&times;</button>
     </div>
     <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="config-overlay" onclick="closeConfigModal(event)">
+  <div class="modal config-modal">
+    <div class="modal-header">
+      <h3>Settings</h3>
+      <button class="modal-close" onclick="closeConfigModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="config-section">
+        <label class="config-label" for="config-recent-count">Number of recent jobs to display:</label>
+        <input type="number" id="config-recent-count" class="config-input" min="1" max="50" value="5">
+        <div class="config-hint">Show between 1 and 50 recently finished jobs per server</div>
+      </div>
+      <div class="config-actions">
+        <button class="config-save-btn" onclick="saveConfig()">Save</button>
+        <button class="config-cancel-btn" onclick="closeConfigModal()">Cancel</button>
+      </div>
+    </div>
   </div>
 </div>
 

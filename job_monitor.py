@@ -114,6 +114,109 @@ def fetch_recent_jobs(server, count=5):
         return []
 
 
+def fetch_job_gpu_info(server, jobid):
+    """Fetch GPU allocation and stats for a specific job."""
+    try:
+        # Get job info including node and GRES
+        result = subprocess.run(
+            ["ssh", server,
+             f"squeue --me --jobs={jobid} --format='%N|%b' --noheader"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return {"error": "Job not found or not running"}
+
+        parts = result.stdout.strip().split('|')
+        if len(parts) < 2:
+            return {"error": "Could not parse job information"}
+
+        nodelist = parts[0].strip()
+        gres = parts[1].strip()
+
+        # Parse GPU indices from GRES
+        gpu_indices = []
+        if 'IDX:' in gres:
+            idx_part = gres.split('IDX:')[1].rstrip(')')
+            if '-' in idx_part:
+                start, end = idx_part.split('-')
+                gpu_indices = list(range(int(start), int(end) + 1))
+            else:
+                gpu_indices = [int(idx_part)]
+
+        # Expand nodelist
+        nodes = []
+        if '[' in nodelist:
+            base = nodelist.split('[')[0]
+            range_part = nodelist.split('[')[1].rstrip(']')
+            if '-' in range_part:
+                start, end = range_part.split('-')
+                for i in range(int(start), int(end) + 1):
+                    nodes.append(f"{base}{str(i).zfill(len(start))}")
+            else:
+                nodes.append(f"{base}{range_part}")
+        else:
+            nodes.append(nodelist)
+
+        if not nodes:
+            return {"error": "No nodes found for this job"}
+
+        # Fetch GPU stats for each node
+        node_gpus = []
+        for node in nodes:
+            # Run nvidia-smi on the node
+            result = subprocess.run(
+                ["ssh", server,
+                 f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {node} "
+                 f"nvidia-smi --query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu "
+                 f"--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+
+            if result.returncode != 0:
+                node_gpus.append({
+                    "node": node,
+                    "error": result.stderr.strip() or "Failed to get GPU info",
+                    "gpus": []
+                })
+                continue
+
+            gpus = []
+            for line in result.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) >= 7:
+                    gpu_idx = int(parts[0])
+                    # Only include GPUs allocated to this job
+                    if not gpu_indices or gpu_idx in gpu_indices:
+                        gpus.append({
+                            "index": parts[0],
+                            "name": parts[1],
+                            "gpu_util": parts[2],
+                            "mem_util": parts[3],
+                            "mem_used": parts[4],
+                            "mem_total": parts[5],
+                            "temperature": parts[6],
+                        })
+
+            node_gpus.append({
+                "node": node,
+                "error": None,
+                "gpus": gpus
+            })
+
+        return {"nodes": node_gpus}
+
+    except subprocess.TimeoutExpired:
+        return {"error": "SSH connection timed out"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+
+
 def fetch_all_for_server(server, recent_count=5):
     """Fetch both active and recent jobs for *server*."""
     active = fetch_jobs(server)
@@ -279,6 +382,17 @@ def api_update_config():
             return jsonify({"error": "Failed to save config"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/job-gpu-status")
+def api_job_gpu_status():
+    server = request.args.get("server", "")
+    jobid = request.args.get("jobid", "")
+    if server not in SERVERS:
+        return jsonify({"error": "Unknown server"}), 400
+    if not jobid.isdigit():
+        return jsonify({"error": "Invalid job ID"}), 400
+    return jsonify(fetch_job_gpu_info(server, jobid))
 
 
 if __name__ == "__main__":

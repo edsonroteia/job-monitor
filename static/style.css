@@ -591,6 +591,153 @@ tr.clickable:active td { background: #e0e7ff; }
   background: #e9ecef;
 }
 
+/* ── Per-Job GPU Status ──────────────────────────────── */
+
+.gpu-nodelist {
+  cursor: pointer;
+  position: relative;
+}
+
+.gpu-nodelist:hover {
+  background: #eef2ff !important;
+}
+
+.gpu-node-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+tr.gpu-active .gpu-nodelist {
+  background: #e0e7ff !important;
+}
+
+tr.gpu-active .gpu-node-link {
+  font-weight: 600;
+  text-decoration-style: solid;
+}
+
+.gpu-details-row {
+  display: none;
+  background: #f8fafc;
+}
+
+.gpu-details-row.open {
+  display: table-row;
+}
+
+.gpu-details-row td {
+  padding: 0;
+  border-bottom: none;
+}
+
+.gpu-details-content {
+  padding: 1rem;
+  animation: gpu-expand 0.2s ease-out;
+}
+
+@keyframes gpu-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.job-gpu-container {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.85rem;
+}
+
+.job-gpu-node-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.job-gpu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.job-gpu-card {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.job-gpu-card-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+
+.job-gpu-name {
+  font-size: 0.78rem;
+  color: var(--text);
+  margin-bottom: 0.65rem;
+  font-weight: 500;
+}
+
+.job-gpu-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.job-gpu-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.job-gpu-stat-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.job-gpu-stat-value {
+  color: var(--text);
+  font-weight: 600;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, monospace;
+  font-size: 0.72rem;
+}
+
+/* GPU Utilization colors */
+.job-gpu-stat-value.util-low {
+  color: #059669;
+}
+
+.job-gpu-stat-value.util-medium {
+  color: #d97706;
+}
+
+.job-gpu-stat-value.util-high {
+  color: #dc2626;
+}
+
+/* Temperature colors */
+.job-gpu-stat-value.temp-normal {
+  color: #059669;
+}
+
+.job-gpu-stat-value.temp-warm {
+  color: #d97706;
+}
+
+.job-gpu-stat-value.temp-high {
+  color: #dc2626;
+}
+
 /* ── Reduced motion ──────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

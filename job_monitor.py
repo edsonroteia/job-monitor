@@ -13,10 +13,77 @@ app = Flask(__name__)
 SERVERS = ["jz"]
 SQUEUE_FORMAT = "%.18i %.12P %.30j %.8T %.10M %.12l %.20b %.20V %.6D %R"
 CONFIG_FILE = "config.json"
+JOB_LOG_FILE = "job_log.json"
 
 DEFAULT_CONFIG = {
     "recent_jobs_count": 5
 }
+
+
+def load_job_log():
+    """Load the job log from disk."""
+    if not os.path.exists(JOB_LOG_FILE):
+        return {}
+    try:
+        with open(JOB_LOG_FILE, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def save_job_log(log):
+    """Save the job log to disk."""
+    try:
+        with open(JOB_LOG_FILE, "w") as f:
+            json.dump(log, f, indent=2)
+    except IOError:
+        pass  # Fail silently if we can't write
+
+
+def update_job_in_log(server, jobid, job_info):
+    """Add or update a job entry in the log."""
+    log = load_job_log()
+    if server not in log:
+        log[server] = {}
+
+    # Keep existing data and update with new info
+    if jobid in log[server]:
+        log[server][jobid].update(job_info)
+    else:
+        log[server][jobid] = job_info
+
+    save_job_log(log)
+
+
+def get_job_from_log(server, jobid):
+    """Retrieve a job entry from the log."""
+    log = load_job_log()
+    return log.get(server, {}).get(jobid)
+
+
+def _find_output_paths_scontrol(server, jobid):
+    """Try scontrol to get the StdOut and StdErr paths (works for active/recent jobs)."""
+    result = subprocess.run(
+        ["ssh", server, "scontrol", "show", "job", jobid],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        return None, None
+
+    stdout_path = None
+    stderr_path = None
+    for part in result.stdout.split():
+        if part.startswith("StdOut="):
+            path = part.split("=", 1)[1]
+            # Skip if it's a placeholder like "(null)" or empty
+            if path and path != "(null)":
+                stdout_path = path
+        elif part.startswith("StdErr="):
+            path = part.split("=", 1)[1]
+            if path and path != "(null)":
+                stderr_path = path
+    return stdout_path, stderr_path
+
 
 
 def load_config():
@@ -100,15 +167,19 @@ def fetch_recent_jobs(server, count=5):
             state = parts[2]
             if not state.startswith(finished_prefixes):
                 continue
-            jobs.append({
-                "JobID": parts[0],
+
+            jobid = parts[0]
+            job = {
+                "JobID": jobid,
                 "JobName": parts[1],
                 "State": state,
                 "Elapsed": parts[3],
                 "Start": parts[4],
                 "End": parts[5],
                 "ExitCode": parts[6],
-            })
+            }
+            jobs.append(job)
+
         return jobs[-count:][::-1]
     except Exception:
         return []
@@ -225,69 +296,32 @@ def fetch_all_for_server(server, recent_count=5):
     return active
 
 
-def _find_output_paths_scontrol(server, jobid):
-    """Try scontrol to get the StdOut and StdErr paths (works for active jobs)."""
-    result = subprocess.run(
-        ["ssh", server, "scontrol", "show", "job", jobid],
-        capture_output=True, text=True, timeout=15,
-    )
-    if result.returncode != 0:
-        return None, None
-
-    stdout_path = None
-    stderr_path = None
-    for part in result.stdout.split():
-        if part.startswith("StdOut="):
-            stdout_path = part.split("=", 1)[1]
-        elif part.startswith("StdErr="):
-            stderr_path = part.split("=", 1)[1]
-    return stdout_path, stderr_path
-
-
-def _find_output_paths_sacct(server, jobid):
-    """Fallback: use sacct WorkDir + glob to find the output files."""
-    result = subprocess.run(
-        ["ssh", server,
-         f"sacct --parsable2 --noheader --allocations"
-         f" --format=WorkDir --jobs={jobid}"],
-        capture_output=True, text=True, timeout=15,
-    )
-    if result.returncode != 0:
-        return None, None
-    workdir = result.stdout.strip().splitlines()[0].strip() if result.stdout.strip() else None
-    if not workdir:
-        return None, None
-
-    # Search for slurm-<jobid>*.out and slurm-<jobid>*.err in the working directory
-    find_result = subprocess.run(
-        ["ssh", server,
-         f"find {workdir} -maxdepth 1 -name 'slurm-{jobid}*' -type f"
-         f" 2>/dev/null"],
-        capture_output=True, text=True, timeout=15,
-    )
-
-    stdout_path = None
-    stderr_path = None
-    for path in find_result.stdout.strip().splitlines():
-        if path.endswith(".out"):
-            stdout_path = path
-        elif path.endswith(".err"):
-            stderr_path = path
-        elif not stdout_path:  # Default to first file found if no .out extension
-            stdout_path = path
-
-    return stdout_path, stderr_path
-
-
 def fetch_job_output(server, jobid):
     """SSH into *server*, find the SLURM stdout/stderr files for *jobid*, and tail them."""
     try:
-        stdout_path, stderr_path = _find_output_paths_scontrol(server, jobid)
-        if not stdout_path:
-            stdout_path, stderr_path = _find_output_paths_sacct(server, jobid)
+        # First, check if we have this job in our log
+        logged_job = get_job_from_log(server, jobid)
+        stdout_path = logged_job.get("stdout_path") if logged_job else None
+        stderr_path = logged_job.get("stderr_path") if logged_job else None
+
+        # If not in log or paths missing, try to find them
+        if not stdout_path and not stderr_path:
+            stdout_path, stderr_path = _find_output_paths_scontrol(server, jobid)
+
+            # Save newly found paths to log
+            if stdout_path or stderr_path:
+                job_info = {}
+                if stdout_path:
+                    job_info["stdout_path"] = stdout_path
+                if stderr_path:
+                    job_info["stderr_path"] = stderr_path
+                update_job_in_log(server, jobid, job_info)
 
         if not stdout_path and not stderr_path:
-            return {"error": "Could not find output file paths for this job"}
+            return {
+                "error": "Could not find output file paths for this job",
+                "details": "Job may be too old, output files may have been deleted, or job may not have generated output files"
+            }
 
         result = {}
 

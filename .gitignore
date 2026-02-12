@@ -3,3 +3,4 @@ __pycache__/
 .env
 venv/
 config.json
+job_log.json

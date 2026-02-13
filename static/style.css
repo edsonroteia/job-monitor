@@ -58,7 +58,7 @@ header {
   color: var(--muted);
 }
 
-.controls select {
+.controls select, .controls input[type="text"] {
   padding: 0.35rem 0.5rem;
   font-size: 0.85rem;
   border: 1px solid var(--border);
@@ -67,7 +67,12 @@ header {
   transition: border-color 0.2s;
 }
 
-.controls select:focus {
+.controls input[type="text"] {
+  padding: 0.35rem 0.75rem;
+  min-width: 200px;
+}
+
+.controls select:focus, .controls input[type="text"]:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -94,7 +99,7 @@ header {
 
 /* ── Refresh button ──────────────────────────────────── */
 
-#refresh-btn {
+#refresh-btn, #config-btn {
   padding: 0.5rem 1.2rem;
   font-size: 0.9rem;
   border: 1px solid var(--border);
@@ -104,13 +109,18 @@ header {
   transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-#refresh-btn:hover {
+#config-btn {
+  padding: 0.5rem 0.9rem;
+  font-size: 1.1rem;
+}
+
+#refresh-btn:hover, #config-btn:hover {
   background: #e9ecef;
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-#refresh-btn:active {
+#refresh-btn:active, #config-btn:active {
   transform: translateY(1px);
   box-shadow: none;
 }
@@ -446,6 +456,286 @@ tr.clickable:active td { background: #e0e7ff; }
 .recent-table {
   font-size: 0.82rem;
   margin-top: 0.5rem;
+}
+
+/* ── Log tabs ────────────────────────────────────────── */
+
+.log-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.log-tab {
+  background: none;
+  border: none;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.log-tab:hover {
+  color: var(--text);
+}
+
+.log-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.log-content {
+  display: none;
+}
+
+.log-content.active {
+  display: block;
+}
+
+.log-path {
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+}
+
+.log-path code {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, monospace;
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+/* ── Config Modal ────────────────────────────────────── */
+
+.config-modal {
+  width: min(90vw, 500px);
+  max-height: auto;
+}
+
+.config-section {
+  margin-bottom: 1.5rem;
+}
+
+.config-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+.config-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  transition: border-color 0.2s;
+}
+
+.config-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.config-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+}
+
+.config-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.config-save-btn, .config-cancel-btn {
+  padding: 0.6rem 1.5rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.config-save-btn {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.config-save-btn:hover {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.config-cancel-btn {
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+.config-cancel-btn:hover {
+  background: #e9ecef;
+}
+
+/* ── Per-Job GPU Status ──────────────────────────────── */
+
+.gpu-nodelist {
+  cursor: pointer;
+  position: relative;
+}
+
+.gpu-nodelist:hover {
+  background: #eef2ff !important;
+}
+
+.gpu-node-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+tr.gpu-active .gpu-nodelist {
+  background: #e0e7ff !important;
+}
+
+tr.gpu-active .gpu-node-link {
+  font-weight: 600;
+  text-decoration-style: solid;
+}
+
+.gpu-details-row {
+  display: none;
+  background: #f8fafc;
+}
+
+.gpu-details-row.open {
+  display: table-row;
+}
+
+.gpu-details-row td {
+  padding: 0;
+  border-bottom: none;
+}
+
+.gpu-details-content {
+  padding: 1rem;
+  animation: gpu-expand 0.2s ease-out;
+}
+
+@keyframes gpu-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.job-gpu-container {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.85rem;
+}
+
+.job-gpu-node-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.job-gpu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.job-gpu-card {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.job-gpu-card-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+
+.job-gpu-name {
+  font-size: 0.78rem;
+  color: var(--text);
+  margin-bottom: 0.65rem;
+  font-weight: 500;
+}
+
+.job-gpu-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.job-gpu-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.job-gpu-stat-label {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.job-gpu-stat-value {
+  color: var(--text);
+  font-weight: 600;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, monospace;
+  font-size: 0.72rem;
+}
+
+/* GPU Utilization colors */
+.job-gpu-stat-value.util-low {
+  color: #059669;
+}
+
+.job-gpu-stat-value.util-medium {
+  color: #d97706;
+}
+
+.job-gpu-stat-value.util-high {
+  color: #dc2626;
+}
+
+/* Temperature colors */
+.job-gpu-stat-value.temp-normal {
+  color: #059669;
+}
+
+.job-gpu-stat-value.temp-warm {
+  color: #d97706;
+}
+
+.job-gpu-stat-value.temp-high {
+  color: #dc2626;
 }
 
 /* ── Reduced motion ──────────────────────────────────── */

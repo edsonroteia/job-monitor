@@ -27,6 +27,33 @@ function nextLoadMsg() {
   return LOADING_MSGS[loadMsgIdx++ % LOADING_MSGS.length];
 }
 
+/* ── Name filter ─────────────────────────────────────── */
+
+let nameFilter = "";
+
+function applyNameFilter() {
+  nameFilter = document.getElementById("name-filter").value.toLowerCase();
+  const sections = document.querySelectorAll(".server-section");
+
+  sections.forEach((section) => {
+    const tbody = section.querySelector("tbody");
+    if (!tbody) return;
+
+    const rows = tbody.querySelectorAll("tr[data-jobid]");
+    rows.forEach((row) => {
+      const nameCell = row.querySelector("td[data-col='NAME']");
+      if (!nameCell) return;
+
+      const jobName = nameCell.textContent.toLowerCase();
+      if (nameFilter === "" || jobName.includes(nameFilter)) {
+        row.style.display = "";
+      } else {
+        row.style.display = "none";
+      }
+    });
+  });
+}
+
 /* ── Constants ───────────────────────────────────────── */
 
 const STATE_CLASSES = {
@@ -51,6 +78,9 @@ const RECENT_COLUMNS = [
 
 // Per-server open/closed state for the recent-jobs disclosure (survives DOM diffing)
 const recentOpen = {};
+
+// Per-job GPU expansion state (survives DOM diffing)
+const jobGpuOpen = {};
 
 const CLICKABLE_STATES = new Set(["RUNNING", "COMPLETING"]);
 
@@ -148,6 +178,143 @@ function toggleRecent(serverName) {
   if (body) body.classList.toggle("open");
 }
 
+/* ── Per-Job GPU Status ──────────────────────────────── */
+
+async function toggleJobGpu(event, serverName, jobId) {
+  event.stopPropagation(); // Prevent row click
+
+  const jobKey = `${serverName}-${jobId}`;
+  const wasOpen = !!jobGpuOpen[jobKey];
+  jobGpuOpen[jobKey] = !wasOpen;
+
+  const section = document.getElementById(`server-${serverName}`);
+  if (!section) return;
+
+  const tbody = section.querySelector("tbody");
+  if (!tbody) return;
+
+  const jobRow = tbody.querySelector(`tr[data-jobid="${jobId}"]`);
+  if (!jobRow) return;
+
+  // Toggle GPU active state on row
+  if (jobGpuOpen[jobKey]) {
+    jobRow.classList.add("gpu-active");
+  } else {
+    jobRow.classList.remove("gpu-active");
+  }
+
+  // Find or create GPU details row
+  let gpuRow = jobRow.nextElementSibling;
+  if (!gpuRow || !gpuRow.classList.contains("gpu-details-row")) {
+    gpuRow = document.createElement("tr");
+    gpuRow.className = "gpu-details-row";
+    gpuRow.innerHTML = `<td colspan="100%"><div class="gpu-details-content"></div></td>`;
+    jobRow.after(gpuRow);
+  }
+
+  if (jobGpuOpen[jobKey]) {
+    gpuRow.classList.add("open");
+    await fetchJobGpuStatus(serverName, jobId);
+  } else {
+    gpuRow.classList.remove("open");
+  }
+}
+
+async function fetchJobGpuStatus(serverName, jobId) {
+  const section = document.getElementById(`server-${serverName}`);
+  if (!section) return;
+
+  const tbody = section.querySelector("tbody");
+  if (!tbody) return;
+
+  const jobRow = tbody.querySelector(`tr[data-jobid="${jobId}"]`);
+  if (!jobRow) return;
+
+  const gpuRow = jobRow.nextElementSibling;
+  if (!gpuRow || !gpuRow.classList.contains("gpu-details-row")) return;
+
+  const content = gpuRow.querySelector(".gpu-details-content");
+  if (!content) return;
+
+  content.innerHTML = '<div class="loading-text"><span class="spinner"></span>Fetching GPU status…</div>';
+
+  try {
+    const resp = await fetch(
+      `/api/job-gpu-status?server=${encodeURIComponent(serverName)}&jobid=${encodeURIComponent(jobId)}`
+    );
+    const data = await resp.json();
+
+    if (data.error) {
+      content.innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`;
+      return;
+    }
+
+    if (!data.nodes || data.nodes.length === 0) {
+      content.innerHTML = '<div class="no-jobs">No GPU data available for this job.</div>';
+      return;
+    }
+
+    content.innerHTML = buildJobGpuHtml(data.nodes);
+  } catch (err) {
+    content.innerHTML = `<div class="error-msg">Failed to fetch GPU status: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function buildJobGpuHtml(nodeData) {
+  let html = '<div class="job-gpu-container">';
+
+  nodeData.forEach((nodeInfo) => {
+    const hasError = !!nodeInfo.error;
+
+    if (nodeInfo.node) {
+      html += `<div class="job-gpu-node-label">${escapeHtml(nodeInfo.node)}</div>`;
+    }
+
+    if (hasError) {
+      html += `<div class="error-msg">${escapeHtml(nodeInfo.error)}</div>`;
+    } else if (!nodeInfo.gpus || nodeInfo.gpus.length === 0) {
+      html += `<div class="no-jobs">No GPUs allocated</div>`;
+    } else {
+      html += '<div class="job-gpu-grid">';
+      nodeInfo.gpus.forEach((gpu) => {
+        const gpuUtil = parseInt(gpu.gpu_util) || 0;
+        const temp = parseInt(gpu.temperature) || 0;
+
+        let utilClass = "util-low";
+        if (gpuUtil > 80) utilClass = "util-high";
+        else if (gpuUtil > 40) utilClass = "util-medium";
+
+        let tempClass = "temp-normal";
+        if (temp > 80) tempClass = "temp-high";
+        else if (temp > 70) tempClass = "temp-warm";
+
+        html += `<div class="job-gpu-card">`;
+        html += `<div class="job-gpu-card-header">GPU ${escapeHtml(gpu.index)}</div>`;
+        html += `<div class="job-gpu-name">${escapeHtml(gpu.name)}</div>`;
+        html += `<div class="job-gpu-stats">`;
+        html += `<div class="job-gpu-stat">`;
+        html += `<span class="job-gpu-stat-label">Util:</span>`;
+        html += `<span class="job-gpu-stat-value ${utilClass}">${escapeHtml(gpu.gpu_util)}%</span>`;
+        html += `</div>`;
+        html += `<div class="job-gpu-stat">`;
+        html += `<span class="job-gpu-stat-label">Memory:</span>`;
+        html += `<span class="job-gpu-stat-value">${escapeHtml(gpu.mem_used)} / ${escapeHtml(gpu.mem_total)} MB</span>`;
+        html += `</div>`;
+        html += `<div class="job-gpu-stat">`;
+        html += `<span class="job-gpu-stat-label">Temp:</span>`;
+        html += `<span class="job-gpu-stat-value ${tempClass}">${escapeHtml(gpu.temperature)}°C</span>`;
+        html += `</div>`;
+        html += `</div>`;
+        html += `</div>`;
+      });
+      html += '</div>';
+    }
+  });
+
+  html += '</div>';
+  return html;
+}
+
 function patchRecentSection(section, serverData) {
   const name = serverData.server;
   const recentJobs = serverData.recent_jobs || [];
@@ -180,6 +347,70 @@ function patchRecentSection(section, serverData) {
   }
 }
 
+/* ── Config Modal ────────────────────────────────────── */
+
+let currentConfig = { recent_jobs_count: 5 };
+
+async function loadConfig() {
+  try {
+    const resp = await fetch("/api/config");
+    const config = await resp.json();
+    currentConfig = config;
+  } catch (err) {
+    console.error("Failed to load config:", err);
+  }
+}
+
+async function showConfigModal() {
+  const overlay = document.getElementById("config-overlay");
+  const input = document.getElementById("config-recent-count");
+
+  input.value = currentConfig.recent_jobs_count || 5;
+  overlay.classList.add("active");
+}
+
+function closeConfigModal(event) {
+  if (event && event.target !== document.getElementById("config-overlay")) return;
+  document.getElementById("config-overlay").classList.remove("active");
+}
+
+async function saveConfig() {
+  const input = document.getElementById("config-recent-count");
+  const count = parseInt(input.value);
+
+  if (isNaN(count) || count < 1 || count > 50) {
+    alert("Please enter a number between 1 and 50");
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recent_jobs_count: count })
+    });
+
+    const result = await resp.json();
+
+    if (result.success) {
+      currentConfig = result.config;
+      closeConfigModal();
+      fetchJobs(); // Refresh to apply new settings
+    } else {
+      alert("Failed to save config: " + (result.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Failed to save config: " + err.message);
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeModal();
+    closeConfigModal();
+  }
+});
+
 /* ── Modal ───────────────────────────────────────────── */
 
 function closeModal(event) {
@@ -203,19 +434,76 @@ async function showJobOutput(server, jobid, jobname) {
     const data = await resp.json();
     if (data.error) {
       body.innerHTML = `<div class="error-msg">${escapeHtml(data.error)}</div>`;
-    } else if (!data.output.trim()) {
-      body.innerHTML = '<div class="no-jobs">No output yet. The job may still be starting up.</div>';
-    } else {
-      body.innerHTML = `<pre>${escapeHtml(data.output)}</pre>`;
+      return;
     }
+
+    const hasStdout = data.stdout || data.stdout_error;
+    const hasStderr = data.stderr || data.stderr_error;
+
+    if (!hasStdout && !hasStderr) {
+      body.innerHTML = '<div class="no-jobs">No output files found. The job may still be starting up.</div>';
+      return;
+    }
+
+    // Build tabbed interface
+    let html = '<div class="log-tabs">';
+    if (hasStdout) {
+      html += '<button class="log-tab active" onclick="switchLogTab(event, \'stdout\')">stdout</button>';
+    }
+    if (hasStderr) {
+      html += `<button class="log-tab${!hasStdout ? ' active' : ''}" onclick="switchLogTab(event, 'stderr')">stderr</button>`;
+    }
+    html += '</div>';
+
+    // stdout content
+    if (hasStdout) {
+      html += '<div class="log-content active" data-log="stdout">';
+      if (data.stdout_path) {
+        html += `<div class="log-path">Path: <code>${escapeHtml(data.stdout_path)}</code></div>`;
+      }
+      if (data.stdout_error) {
+        html += `<div class="error-msg">${escapeHtml(data.stdout_error)}</div>`;
+      } else if (data.stdout && data.stdout.trim()) {
+        html += `<pre>${escapeHtml(data.stdout)}</pre>`;
+      } else {
+        html += '<div class="no-jobs">No stdout output yet.</div>';
+      }
+      html += '</div>';
+    }
+
+    // stderr content
+    if (hasStderr) {
+      html += `<div class="log-content${!hasStdout ? ' active' : ''}" data-log="stderr">`;
+      if (data.stderr_path) {
+        html += `<div class="log-path">Path: <code>${escapeHtml(data.stderr_path)}</code></div>`;
+      }
+      if (data.stderr_error) {
+        html += `<div class="error-msg">${escapeHtml(data.stderr_error)}</div>`;
+      } else if (data.stderr && data.stderr.trim()) {
+        html += `<pre>${escapeHtml(data.stderr)}</pre>`;
+      } else {
+        html += '<div class="no-jobs">No stderr output yet.</div>';
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
   } catch (err) {
     body.innerHTML = `<div class="error-msg">Failed to fetch output: ${escapeHtml(err.message)}</div>`;
   }
 }
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeModal();
-});
+function switchLogTab(event, logType) {
+  const tabs = document.querySelectorAll('.log-tab');
+  const contents = document.querySelectorAll('.log-content');
+
+  tabs.forEach(tab => tab.classList.remove('active'));
+  contents.forEach(content => content.classList.remove('active'));
+
+  event.target.classList.add('active');
+  document.querySelector(`.log-content[data-log="${logType}"]`).classList.add('active');
+}
+
 
 /* ── DOM diffing ─────────────────────────────────────── */
 
@@ -347,9 +635,23 @@ function buildRowHtml(serverName, job, animDelay) {
   const animStyle = animDelay >= 0 ? ` style="animation: row-in 0.25s ${animDelay}s both;"` : "";
   const cls = (clickable ? "clickable" : "") + (animDelay >= 0 ? " entering" : "");
 
-  let html = `<tr class="${cls}" ${onclick} title="${clickable ? "Click to view output" : ""}" data-jobid="${job.JOBID}"${animStyle}>`;
+  // Check if job has GPUs
+  const hasGpu = job["TRES_PER_NODE"] && job["TRES_PER_NODE"].toLowerCase().includes("gpu");
+  const jobKey = `${serverName}-${job.JOBID}`;
+  const gpuActive = jobGpuOpen[jobKey] ? " gpu-active" : "";
+
+  let html = `<tr class="${cls}${gpuActive}" ${onclick} title="${clickable ? "Click to view output" : ""}" data-jobid="${job.JOBID}"${animStyle}>`;
   COLUMNS.forEach((c) => {
-    html += `<td data-col="${c.key}">${cellHtml(c, job)}</td>`;
+    const cellContent = cellHtml(c, job);
+
+    // Make nodelist clickable for GPU jobs
+    if (c.key === "NODELIST(REASON)" && hasGpu) {
+      html += `<td data-col="${c.key}" class="gpu-nodelist" onclick="event.stopPropagation(); toggleJobGpu(event, '${serverName}', '${job.JOBID}')" title="Click to view GPU stats">`;
+      html += `<span class="gpu-node-link">${cellContent}</span>`;
+      html += `</td>`;
+    } else {
+      html += `<td data-col="${c.key}">${cellContent}</td>`;
+    }
   });
   html += `</tr>`;
   return html;
@@ -364,7 +666,7 @@ function patchTable(section, serverData) {
   const newJobs = serverData.jobs;
   const newIds  = new Set(newJobs.map((j) => j.JOBID));
 
-  // Index existing rows by JOBID
+  // Index existing rows by JOBID (skip GPU details rows)
   const existingRows = {};
   tbody.querySelectorAll("tr[data-jobid]").forEach((tr) => {
     existingRows[tr.dataset.jobid] = tr;
@@ -373,6 +675,11 @@ function patchTable(section, serverData) {
   // Remove rows for jobs that no longer exist
   for (const [id, tr] of Object.entries(existingRows)) {
     if (!newIds.has(id)) {
+      // Also remove GPU details row if it exists
+      const nextRow = tr.nextElementSibling;
+      if (nextRow && nextRow.classList.contains("gpu-details-row")) {
+        nextRow.remove();
+      }
       tr.remove();
     }
   }
@@ -382,26 +689,72 @@ function patchTable(section, serverData) {
   for (const job of newJobs) {
     const id = job.JOBID;
     let tr = existingRows[id];
+    const hasGpu = job["TRES_PER_NODE"] && job["TRES_PER_NODE"].toLowerCase().includes("gpu");
+    const jobKey = `${name}-${id}`;
 
     if (tr) {
+      // Check if this row has a GPU details row after it
+      const hasGpuRow = tr.nextElementSibling && tr.nextElementSibling.classList.contains("gpu-details-row");
+      let gpuRow = hasGpuRow ? tr.nextElementSibling : null;
+
+      // Update GPU active class on row
+      const isGpuOpen = jobGpuOpen[jobKey];
+      if (isGpuOpen) {
+        tr.classList.add("gpu-active");
+      } else {
+        tr.classList.remove("gpu-active");
+      }
+
       // Update cells that changed
       COLUMNS.forEach((col) => {
         const td = tr.querySelector(`td[data-col="${col.key}"]`);
         if (!td) return;
+
         const newHtml = cellHtml(col, job);
-        if (td.innerHTML !== newHtml) {
-          td.innerHTML = newHtml;
-          td.classList.remove("changed");
-          // Force reflow to restart animation
-          void td.offsetWidth;
-          td.classList.add("changed");
+
+        // Special handling for nodelist column with GPU
+        if (col.key === "NODELIST(REASON)" && hasGpu) {
+          // Check if it already has the GPU styling
+          const hasGpuClass = td.classList.contains("gpu-nodelist");
+          if (!hasGpuClass) {
+            // Rebuild the cell with GPU functionality
+            td.className = "gpu-nodelist";
+            td.setAttribute("onclick", `event.stopPropagation(); toggleJobGpu(event, '${name}', '${id}')`);
+            td.setAttribute("title", "Click to view GPU stats");
+            td.innerHTML = `<span class="gpu-node-link">${newHtml}</span>`;
+          } else {
+            // Update content but preserve structure
+            const link = td.querySelector(".gpu-node-link");
+            if (link && link.innerHTML !== newHtml) {
+              link.innerHTML = newHtml;
+            }
+          }
+        } else if (col.key === "NODELIST(REASON)" && !hasGpu) {
+          // Remove GPU styling if no longer has GPU
+          td.className = "";
+          td.removeAttribute("onclick");
+          td.removeAttribute("title");
+          if (td.innerHTML !== newHtml) {
+            td.innerHTML = newHtml;
+          }
+        } else {
+          // Normal cell update
+          if (td.innerHTML !== newHtml) {
+            td.innerHTML = newHtml;
+            td.classList.remove("changed");
+            void td.offsetWidth;
+            td.classList.add("changed");
+          }
         }
       });
 
       // Update clickable state
       const state = job["STATE"] || "";
       const clickable = CLICKABLE_STATES.has(state);
-      tr.className = clickable ? "clickable" : "";
+      const baseClass = clickable ? "clickable" : "";
+      const gpuClass = isGpuOpen ? " gpu-active" : "";
+      tr.className = baseClass + gpuClass;
+
       if (clickable) {
         tr.setAttribute("onclick",
           `showJobOutput('${name}','${job.JOBID}','${(job.NAME || "").replace(/'/g, "\\'")}')`
@@ -411,24 +764,43 @@ function patchTable(section, serverData) {
         tr.removeAttribute("onclick");
         tr.title = "";
       }
+
+      // Ensure correct order - move job row and GPU row together
+      if (prevRow) {
+        const targetNext = prevRow.nextElementSibling;
+        const actualNext = targetNext && targetNext.classList.contains("gpu-details-row")
+          ? targetNext.nextElementSibling
+          : targetNext;
+        if (actualNext !== tr) {
+          prevRow.after(tr);
+          if (gpuRow) {
+            tr.after(gpuRow);
+          }
+        }
+      } else {
+        if (tbody.firstElementChild !== tr) {
+          tbody.prepend(tr);
+          if (gpuRow) {
+            tr.after(gpuRow);
+          }
+        }
+      }
+
+      // Update prevRow to point to GPU row if exists, otherwise the job row
+      prevRow = gpuRow || tr;
     } else {
       // New job — insert a row
       const temp = document.createElement("tbody");
       temp.innerHTML = buildRowHtml(name, job, 0);
       tr = temp.firstElementChild;
-    }
 
-    // Ensure correct order
-    if (prevRow) {
-      if (prevRow.nextElementSibling !== tr) {
+      if (prevRow) {
         prevRow.after(tr);
-      }
-    } else {
-      if (tbody.firstElementChild !== tr) {
+      } else {
         tbody.prepend(tr);
       }
+      prevRow = tr;
     }
-    prevRow = tr;
   }
 }
 
@@ -460,6 +832,11 @@ async function fetchJobs() {
     const newPrev = {};
     data.forEach((s) => { newPrev[s.server] = s; });
     prevData = newPrev;
+
+    // Reapply name filter after data update
+    if (nameFilter !== "") {
+      applyNameFilter();
+    }
 
     isFirstRender = false;
 
@@ -494,5 +871,7 @@ function updateInterval() {
 /* ── Init ────────────────────────────────────────────── */
 
 setGreeting();
-fetchJobs();
-updateInterval();
+loadConfig().then(() => {
+  fetchJobs();
+  updateInterval();
+});

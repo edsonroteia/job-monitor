@@ -318,57 +318,51 @@ async function fetchJobGpuStatus(serverName, jobId) {
 }
 
 function buildJobGpuHtml(nodeData) {
-  let html = '<div class="job-gpu-container">';
+  const multiNode = nodeData.length > 1;
+
+  let html = '<div class="gpu-compact">';
+  html += '<table class="gpu-table"><thead><tr>';
+  html += '<th>GPU</th><th>Utilization</th><th>Memory</th><th>Temp</th>';
+  html += '</tr></thead><tbody>';
 
   nodeData.forEach((nodeInfo) => {
-    const hasError = !!nodeInfo.error;
-
-    if (nodeInfo.node) {
-      html += `<div class="job-gpu-node-label">${escapeHtml(nodeInfo.node)}</div>`;
+    if (nodeInfo.error) {
+      const label = nodeInfo.node ? escapeHtml(nodeInfo.node) + ': ' : '';
+      html += `<tr><td colspan="4" class="gpu-table-msg error-msg">${label}${escapeHtml(nodeInfo.error)}</td></tr>`;
+      return;
     }
 
-    if (hasError) {
-      html += `<div class="error-msg">${escapeHtml(nodeInfo.error)}</div>`;
-    } else if (!nodeInfo.gpus || nodeInfo.gpus.length === 0) {
-      html += `<div class="no-jobs">No GPUs allocated</div>`;
-    } else {
-      html += '<div class="job-gpu-grid">';
-      nodeInfo.gpus.forEach((gpu) => {
-        const gpuUtil = parseInt(gpu.gpu_util) || 0;
-        const temp = parseInt(gpu.temperature) || 0;
-
-        let utilClass = "util-low";
-        if (gpuUtil > 80) utilClass = "util-high";
-        else if (gpuUtil > 40) utilClass = "util-medium";
-
-        let tempClass = "temp-normal";
-        if (temp > 80) tempClass = "temp-high";
-        else if (temp > 70) tempClass = "temp-warm";
-
-        html += `<div class="job-gpu-card">`;
-        html += `<div class="job-gpu-card-header">GPU ${escapeHtml(gpu.index)}</div>`;
-        html += `<div class="job-gpu-name">${escapeHtml(gpu.name)}</div>`;
-        html += `<div class="job-gpu-stats">`;
-        html += `<div class="job-gpu-stat">`;
-        html += `<span class="job-gpu-stat-label">Util:</span>`;
-        html += `<span class="job-gpu-stat-value ${utilClass}">${escapeHtml(gpu.gpu_util)}%</span>`;
-        html += `</div>`;
-        html += `<div class="job-gpu-stat">`;
-        html += `<span class="job-gpu-stat-label">Memory:</span>`;
-        html += `<span class="job-gpu-stat-value">${escapeHtml(gpu.mem_used)} / ${escapeHtml(gpu.mem_total)} MB</span>`;
-        html += `</div>`;
-        html += `<div class="job-gpu-stat">`;
-        html += `<span class="job-gpu-stat-label">Temp:</span>`;
-        html += `<span class="job-gpu-stat-value ${tempClass}">${escapeHtml(gpu.temperature)}°C</span>`;
-        html += `</div>`;
-        html += `</div>`;
-        html += `</div>`;
-      });
-      html += '</div>';
+    if (multiNode && nodeInfo.node) {
+      html += `<tr class="gpu-node-header"><td colspan="4">${escapeHtml(nodeInfo.node)}</td></tr>`;
     }
+
+    if (!nodeInfo.gpus || nodeInfo.gpus.length === 0) {
+      html += '<tr><td colspan="4" class="gpu-table-msg">No GPUs allocated</td></tr>';
+      return;
+    }
+
+    nodeInfo.gpus.forEach((gpu) => {
+      const gpuUtil = parseInt(gpu.gpu_util) || 0;
+      const temp = parseInt(gpu.temperature) || 0;
+
+      let utilClass = "util-low";
+      if (gpuUtil > 80) utilClass = "util-high";
+      else if (gpuUtil > 40) utilClass = "util-medium";
+
+      let tempClass = "temp-normal";
+      if (temp > 80) tempClass = "temp-high";
+      else if (temp > 70) tempClass = "temp-warm";
+
+      html += '<tr>';
+      html += `<td class="gpu-cell-id"><span class="gpu-idx">${escapeHtml(gpu.index)}</span> <span class="gpu-model">${escapeHtml(gpu.name)}</span></td>`;
+      html += `<td class="gpu-cell-util"><div class="gpu-bar"><div class="gpu-bar-fill ${utilClass}" style="width:${gpuUtil}%"></div><span class="gpu-bar-text">${escapeHtml(gpu.gpu_util)}%</span></div></td>`;
+      html += `<td class="gpu-cell-mem">${escapeHtml(gpu.mem_used)}<span class="gpu-mem-sep"> / </span>${escapeHtml(gpu.mem_total)} MB</td>`;
+      html += `<td class="gpu-cell-temp ${tempClass}">${escapeHtml(gpu.temperature)}&deg;C</td>`;
+      html += '</tr>';
+    });
   });
 
-  html += '</div>';
+  html += '</tbody></table></div>';
   return html;
 }
 

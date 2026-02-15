@@ -33,24 +33,10 @@ let nameFilter = "";
 
 function applyNameFilter() {
   nameFilter = document.getElementById("name-filter").value.toLowerCase();
-  const sections = document.querySelectorAll(".server-section");
-
-  sections.forEach((section) => {
-    const tbody = section.querySelector("tbody");
-    if (!tbody) return;
-
-    const rows = tbody.querySelectorAll("tr[data-jobid]");
-    rows.forEach((row) => {
-      const nameCell = row.querySelector("td[data-col='NAME']");
-      if (!nameCell) return;
-
-      const jobName = nameCell.textContent.toLowerCase();
-      if (nameFilter === "" || jobName.includes(nameFilter)) {
-        row.style.display = "";
-      } else {
-        row.style.display = "none";
-      }
-    });
+  const rows = document.querySelectorAll("tr[data-jobname]");
+  rows.forEach((row) => {
+    const jobName = row.dataset.jobname;
+    row.style.display = (nameFilter === "" || jobName.includes(nameFilter)) ? "" : "none";
   });
 }
 
@@ -170,7 +156,7 @@ function buildRecentTableHtml(serverName, recentJobs) {
   recentJobs.forEach((job) => {
     const jobName = (job.JobName || "").replace(/'/g, "\\'");
     const onclick = `onclick="showJobOutput('${serverName}','${job.JobID}','${jobName}')"`;
-    html += `<tr class="clickable" ${onclick} title="Click to view output">`;
+    html += `<tr class="clickable" ${onclick} title="Click to view output" data-jobname="${(job.JobName || '').toLowerCase()}">`;
     RECENT_COLUMNS.forEach((c) => {
       const val = job[c.key] || "";
       if (c.key === "State") {
@@ -382,9 +368,8 @@ async function loadConfig() {
 
 async function showConfigModal() {
   const overlay = document.getElementById("config-overlay");
-  const input = document.getElementById("config-recent-count");
-
-  input.value = currentConfig.recent_jobs_count || 5;
+  document.getElementById("config-recent-count").value = currentConfig.recent_jobs_count || 5;
+  document.getElementById("config-refresh-interval").value = currentConfig.refresh_interval ?? 10;
   overlay.classList.add("active");
 }
 
@@ -394,8 +379,8 @@ function closeConfigModal(event) {
 }
 
 async function saveConfig() {
-  const input = document.getElementById("config-recent-count");
-  const count = parseInt(input.value);
+  const count = parseInt(document.getElementById("config-recent-count").value);
+  const interval = parseInt(document.getElementById("config-refresh-interval").value);
 
   if (isNaN(count) || count < 1 || count > 50) {
     alert("Please enter a number between 1 and 50");
@@ -406,15 +391,16 @@ async function saveConfig() {
     const resp = await fetch("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recent_jobs_count: count })
+      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval })
     });
 
     const result = await resp.json();
 
     if (result.success) {
       currentConfig = result.config;
+      updateInterval();
       closeConfigModal();
-      fetchJobs(); // Refresh to apply new settings
+      fetchJobs();
     } else {
       alert("Failed to save config: " + (result.error || "Unknown error"));
     }
@@ -659,7 +645,7 @@ function buildRowHtml(serverName, job, animDelay) {
   const jobKey = `${serverName}-${job.JOBID}`;
   const gpuActive = jobGpuOpen[jobKey] ? " gpu-active" : "";
 
-  let html = `<tr class="${cls}${gpuActive}" ${onclick} title="${clickable ? "Click to view output" : ""}" data-jobid="${job.JOBID}"${animStyle}>`;
+  let html = `<tr class="${cls}${gpuActive}" ${onclick} title="${clickable ? "Click to view output" : ""}" data-jobid="${job.JOBID}" data-jobname="${(job.NAME || '').toLowerCase()}"${animStyle}>`;
   COLUMNS.forEach((c) => {
     const cellContent = cellHtml(c, job);
 
@@ -866,7 +852,7 @@ async function fetchJobs() {
       `<div class="error-msg">Could not reach the backend. Is job_monitor.py running?<br><small>${escapeHtml(err.message)}</small></div>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = "Refresh";
+    btn.innerHTML = `<svg class="refresh-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>`;
   }
 }
 
@@ -878,7 +864,7 @@ function updateInterval() {
   clearInterval(refreshTimer);
   refreshTimer = null;
   const dot  = document.getElementById("live-dot");
-  const secs = parseInt(document.getElementById("interval-select").value);
+  const secs = currentConfig.refresh_interval ?? 10;
   if (secs > 0) {
     refreshTimer = setInterval(fetchJobs, secs * 1000);
     dot.classList.add("active");

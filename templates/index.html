@@ -16,15 +16,7 @@
   </div>
   <div class="controls">
     <input type="text" id="name-filter" placeholder="Filter by job name..." oninput="applyNameFilter()">
-    <label>Auto-refresh:</label>
-    <select id="interval-select" onchange="updateInterval()">
-      <option value="0">Off</option>
-      <option value="5">5s</option>
-      <option value="10" selected>10s</option>
-      <option value="30">30s</option>
-      <option value="60">60s</option>
-    </select>
-    <button id="refresh-btn" onclick="fetchJobs()">Refresh</button>
+    <button id="refresh-btn" onclick="fetchJobs()" title="Refresh"><svg class="refresh-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
     <button id="config-btn" onclick="showConfigModal()" title="Settings">⚙</button>
   </div>
 </header>
@@ -50,6 +42,16 @@
       <button class="modal-close" onclick="closeConfigModal()">&times;</button>
     </div>
     <div class="modal-body">
+      <div class="config-section">
+        <label class="config-label" for="config-refresh-interval">Auto-refresh interval:</label>
+        <select id="config-refresh-interval" class="config-input">
+          <option value="0">Off</option>
+          <option value="5">5 seconds</option>
+          <option value="10">10 seconds</option>
+          <option value="30">30 seconds</option>
+          <option value="60">60 seconds</option>
+        </select>
+      </div>
       <div class="config-section">
         <label class="config-label" for="config-recent-count">Number of recent jobs to display:</label>
         <input type="number" id="config-recent-count" class="config-input" min="1" max="50" value="5">

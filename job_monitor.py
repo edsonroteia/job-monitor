@@ -10,13 +10,14 @@ from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
-SERVERS = ["jz"]
 SQUEUE_FORMAT = "%.18i %.12P %.30j %.8T %.10M %.12l %.20b %.20V %.20S %.6D %R"
 CONFIG_FILE = "config.json"
 JOB_LOG_FILE = "job_log.json"
 
 DEFAULT_CONFIG = {
-    "recent_jobs_count": 5
+    "servers": ["juwels", "ferranti"],
+    "recent_jobs_count": 5,
+    "refresh_interval": 10
 }
 
 
@@ -369,11 +370,12 @@ def index():
 @app.route("/api/jobs")
 def api_jobs():
     config = load_config()
+    servers = config.get("servers", DEFAULT_CONFIG["servers"])
     recent_count = config.get("recent_jobs_count", 5)
-    with ThreadPoolExecutor(max_workers=len(SERVERS)) as pool:
+    with ThreadPoolExecutor(max_workers=len(servers)) as pool:
         results = list(pool.map(
             lambda s: fetch_all_for_server(s, recent_count),
-            SERVERS
+            servers
         ))
     return jsonify(results)
 
@@ -382,7 +384,8 @@ def api_jobs():
 def api_job_output():
     server = request.args.get("server", "")
     jobid = request.args.get("jobid", "")
-    if server not in SERVERS:
+    config = load_config()
+    if server not in config.get("servers", DEFAULT_CONFIG["servers"]):
         return jsonify({"error": "Unknown server"}), 400
     if not jobid.isdigit():
         return jsonify({"error": "Invalid job ID"}), 400
@@ -407,6 +410,12 @@ def api_update_config():
             if not isinstance(count, int) or count < 1 or count > 50:
                 return jsonify({"error": "recent_jobs_count must be between 1 and 50"}), 400
 
+        # Validate refresh_interval
+        if "refresh_interval" in new_config:
+            interval = new_config["refresh_interval"]
+            if not isinstance(interval, int) or interval not in (0, 5, 10, 30, 60):
+                return jsonify({"error": "refresh_interval must be 0, 5, 10, 30, or 60"}), 400
+
         config = load_config()
         config.update(new_config)
 
@@ -422,7 +431,8 @@ def api_update_config():
 def api_job_gpu_status():
     server = request.args.get("server", "")
     jobid = request.args.get("jobid", "")
-    if server not in SERVERS:
+    config = load_config()
+    if server not in config.get("servers", DEFAULT_CONFIG["servers"]):
         return jsonify({"error": "Unknown server"}), 400
     if not jobid.isdigit():
         return jsonify({"error": "Invalid job ID"}), 400

@@ -10,7 +10,7 @@ from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
-SQUEUE_FORMAT = "%.18i %.12P %.30j %.8T %.10M %.12l %.20b %.20V %.6D %R"
+SQUEUE_FORMAT = "%.18i %.12P %.30j %.8T %.10M %.12l %.20b %.20V %.20S %.6D %R"
 CONFIG_FILE = "config.json"
 JOB_LOG_FILE = "job_log.json"
 

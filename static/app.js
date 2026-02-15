@@ -75,7 +75,7 @@ const COLUMNS = [
   { key: "PARTITION",        label: "Partition" },
   { key: "NAME",             label: "Name" },
   { key: "STATE",            label: "State" },
-  { key: "TIME",             label: "Elapsed" },
+  { key: "TIME",             label: "Elapsed / Start" },
   { key: "TIME_LIMIT",       label: "Time Limit" },
   { key: "TRES_PER_NODE",    label: "GPUs" },
   { key: "SUBMIT_TIME",      label: "Submitted" },
@@ -98,6 +98,16 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+async function copyJobId(jobId) {
+  try {
+    await navigator.clipboard.writeText(jobId);
+    // Optional: Show a brief visual feedback (you can enhance this later)
+    console.log(`Copied job ID: ${jobId}`);
+  } catch (err) {
+    console.error('Failed to copy job ID:', err);
+  }
+}
+
 function formatGres(val) {
   const m = val.match(/gpu[^:]*:(\d+)/i);
   return m ? m[1] + " GPU" : (val && val !== "N/A" ? val : "-");
@@ -109,8 +119,15 @@ function cellHtml(col, job) {
   if (col.key === "STATE") {
     return `<span class="badge ${badgeClass(val)}">${val}</span>`;
   }
+  if (col.key === "JOBID") {
+    return `<button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}')" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>`;
+  }
   if (col.key === "TRES_PER_NODE") {
     return formatGres(val);
+  }
+  // For PENDING jobs, show START_TIME instead of elapsed time
+  if (col.key === "TIME" && job.STATE === "PENDING") {
+    return escapeHtml(job.START_TIME || "-");
   }
   return escapeHtml(val);
 }
@@ -144,6 +161,8 @@ function buildRecentTableHtml(serverName, recentJobs) {
       const val = job[c.key] || "";
       if (c.key === "State") {
         html += `<td><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
+      } else if (c.key === "JobID") {
+        html += `<td><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}')" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
       } else {
         html += `<td>${escapeHtml(val)}</td>`;
       }

@@ -647,13 +647,20 @@ tr.clickable:active td {
 }
 
 .recent-body {
-  max-height: 0;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s var(--ease-out);
+}
+
+.recent-body > * {
   overflow: hidden;
-  transition: max-height 0.35s var(--ease-out);
 }
 
 .recent-body.open {
-  max-height: 600px;
+  grid-template-rows: 1fr;
+}
+
+.recent-body.open > * {
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -747,28 +754,40 @@ tr.clickable:active td {
 
 /* ── GPU status — trigger & expand ──────────────── */
 
-.gpu-nodelist {
+td.gpu-trigger {
   cursor: pointer;
 }
 
-.gpu-nodelist:hover {
+td.gpu-trigger:hover {
   background: var(--accent-soft) !important;
 }
 
-.gpu-node-link {
+.gpu-trigger-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px dashed var(--accent);
-  padding-bottom: 1px;
 }
 
-tr.gpu-active .gpu-nodelist {
+.gpu-icon {
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+td.gpu-trigger:hover .gpu-icon {
+  opacity: 1;
+}
+
+tr.gpu-active td.gpu-trigger {
   background: color-mix(in srgb, var(--accent) 10%, transparent) !important;
 }
 
-tr.gpu-active .gpu-node-link {
+tr.gpu-active .gpu-trigger-content {
   font-weight: 600;
-  border-bottom-style: solid;
+}
+
+tr.gpu-active .gpu-icon {
+  opacity: 1;
 }
 
 .gpu-details-row {
@@ -867,11 +886,50 @@ tr.gpu-active .gpu-node-link {
   font-size: 0.7rem;
 }
 
+/* GPU summary bar */
+
+.gpu-summary {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border-light);
+  flex-wrap: wrap;
+}
+
+.gpu-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gpu-summary-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+.gpu-summary-value {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.gpu-summary-bar {
+  min-width: 90px;
+}
+
 /* Utilization bar */
 
 .gpu-bar {
   position: relative;
-  height: 16px;
+  height: 22px;
   min-width: 80px;
   background: var(--bg);
   border-radius: 2px;
@@ -887,9 +945,13 @@ tr.gpu-active .gpu-node-link {
   transition: width 0.4s var(--ease-out);
 }
 
-.gpu-bar-fill.util-low    { background: var(--running-bg); }
-.gpu-bar-fill.util-medium { background: var(--pending-bg); }
-.gpu-bar-fill.util-high   { background: color-mix(in srgb, var(--failed-bg) 70%, var(--surface)); }
+.gpu-bar-fill.util-high   { background: color-mix(in srgb, var(--accent) 30%, var(--running-bg)); }
+.gpu-bar-fill.util-medium { background: var(--accent-soft); }
+.gpu-bar-fill.util-low    { background: var(--pending-bg); }
+
+.gpu-bar-fill.mem-high    { background: var(--completing-bg); }
+.gpu-bar-fill.mem-medium  { background: color-mix(in srgb, var(--completing-bg) 60%, var(--surface)); }
+.gpu-bar-fill.mem-low     { background: var(--border-light); }
 
 .gpu-bar-text {
   position: relative;
@@ -898,22 +960,32 @@ tr.gpu-active .gpu-node-link {
   font-family: var(--mono);
   font-size: 0.68rem;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 22px;
   padding: 0 0.35rem;
   color: var(--text);
+  white-space: nowrap;
 }
+
+/* Temperature dot */
+
+.gpu-temp-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+  flex-shrink: 0;
+}
+
+.gpu-temp-dot.temp-normal { background: var(--running-fg); }
+.gpu-temp-dot.temp-warm   { background: var(--pending-fg); }
+.gpu-temp-dot.temp-high   { background: var(--failed-fg); }
 
 /* Memory & temp */
 
 .gpu-cell-mem {
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  white-space: nowrap;
-  color: var(--text);
-}
-
-.gpu-mem-sep {
-  color: var(--text-3);
+  min-width: 120px;
 }
 
 .gpu-cell-temp {
@@ -927,9 +999,95 @@ tr.gpu-active .gpu-node-link {
 .gpu-cell-temp.temp-warm   { color: var(--pending-fg); }
 .gpu-cell-temp.temp-high   { color: var(--failed-fg); }
 
+/* ── Config error ───────────────────────────────── */
+
+.config-error:empty {
+  display: none;
+}
+
+.config-error {
+  color: var(--failed-fg);
+  font-size: 0.82rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--failed-bg);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--failed-fg);
+  margin-bottom: 0.5rem;
+}
+
+/* ── Column toggle button ──────────────────────── */
+
+.col-toggle-btn {
+  display: none;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.8rem;
+  font-family: var(--font);
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s var(--ease-out);
+  white-space: nowrap;
+}
+
+.col-toggle-btn:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.col-toggle-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Responsive column hiding ──────────────────── */
+
+@media (max-width: 1100px) {
+  .col-toggle-btn {
+    display: inline-flex;
+  }
+
+  th[data-col="PARTITION"],
+  td[data-col="PARTITION"],
+  th[data-col="TIME_LIMIT"],
+  td[data-col="TIME_LIMIT"],
+  th[data-col="NODES"],
+  td[data-col="NODES"],
+  th[data-col="ExitCode"],
+  td[data-col="ExitCode"] {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  th[data-col="SUBMIT_TIME"],
+  td[data-col="SUBMIT_TIME"],
+  th[data-col="Start"],
+  td[data-col="Start"],
+  th[data-col="End"],
+  td[data-col="End"] {
+    display: none;
+  }
+}
+
+/* Force all columns visible when toggle is active */
+body.show-all-columns th[data-col],
+body.show-all-columns td[data-col] {
+  display: table-cell !important;
+}
+
 /* ── Responsive ─────────────────────────────────── */
 
 @media (max-width: 768px) {
+  th[data-col="NODELIST(REASON)"],
+  td[data-col="NODELIST(REASON)"] {
+    display: none;
+  }
   header {
     flex-direction: column;
     gap: 0.75rem;

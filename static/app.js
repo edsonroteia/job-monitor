@@ -100,6 +100,7 @@ function escapeHtml(s) {
 
 const COPY_ICON = `<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
 const CHECK_ICON = `<svg class="copy-icon copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+const GPU_ICON = `<svg class="gpu-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>`;
 
 async function copyJobId(jobId, btn) {
   try {
@@ -201,7 +202,7 @@ function buildRecentSection(serverName, recentJobs, isOpen) {
 
 function buildRecentTableHtml(serverName, recentJobs) {
   let html = `<div class="table-wrap"><table class="recent-table"><thead><tr>`;
-  RECENT_COLUMNS.forEach((c) => { html += `<th>${c.label}</th>`; });
+  RECENT_COLUMNS.forEach((c) => { html += `<th data-col="${c.key}">${c.label}</th>`; });
   html += `</tr></thead><tbody>`;
   recentJobs.forEach((job) => {
     const jobName = (job.JobName || "").replace(/'/g, "\\'");
@@ -210,13 +211,13 @@ function buildRecentTableHtml(serverName, recentJobs) {
     RECENT_COLUMNS.forEach((c) => {
       const val = job[c.key] || "";
       if (c.key === "State") {
-        html += `<td><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
+        html += `<td data-col="${c.key}"><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
       } else if (c.key === "JobID") {
-        html += `<td><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}', this)" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
+        html += `<td data-col="${c.key}"><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}', this)" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
       } else if (c.key === "Start" || c.key === "End") {
-        html += `<td>${formatTimestamp(val)}</td>`;
+        html += `<td data-col="${c.key}">${formatTimestamp(val)}</td>`;
       } else {
-        html += `<td>${escapeHtml(val)}</td>`;
+        html += `<td data-col="${c.key}">${escapeHtml(val)}</td>`;
       }
     });
     html += `</tr>`;
@@ -320,7 +321,42 @@ async function fetchJobGpuStatus(serverName, jobId) {
 function buildJobGpuHtml(nodeData) {
   const multiNode = nodeData.length > 1;
 
+  // Collect all GPUs for aggregate summary
+  const allGpus = [];
+  nodeData.forEach((nodeInfo) => {
+    if (!nodeInfo.error && nodeInfo.gpus) {
+      nodeInfo.gpus.forEach((gpu) => allGpus.push(gpu));
+    }
+  });
+
   let html = '<div class="gpu-compact">';
+
+  // Aggregate summary bar
+  if (allGpus.length > 0) {
+    const avgUtil = Math.round(allGpus.reduce((s, g) => s + (parseInt(g.gpu_util) || 0), 0) / allGpus.length);
+    const totalMemUsed = allGpus.reduce((s, g) => s + (parseInt(g.mem_used) || 0), 0);
+    const totalMemTotal = allGpus.reduce((s, g) => s + (parseInt(g.mem_total) || 0), 0);
+    const peakTemp = Math.max(...allGpus.map((g) => parseInt(g.temperature) || 0));
+
+    const memUsedGB = (totalMemUsed / 1024).toFixed(1);
+    const memTotalGB = (totalMemTotal / 1024).toFixed(1);
+
+    let summaryUtilClass = "util-low";
+    if (avgUtil > 80) summaryUtilClass = "util-high";
+    else if (avgUtil > 40) summaryUtilClass = "util-medium";
+
+    let summaryTempClass = "temp-normal";
+    if (peakTemp > 80) summaryTempClass = "temp-high";
+    else if (peakTemp > 70) summaryTempClass = "temp-warm";
+
+    html += '<div class="gpu-summary">';
+    html += `<div class="gpu-summary-item"><span class="gpu-summary-label">GPUs</span><span class="gpu-summary-value">${allGpus.length}</span></div>`;
+    html += `<div class="gpu-summary-item"><span class="gpu-summary-label">Avg Util</span><div class="gpu-summary-bar"><div class="gpu-bar"><div class="gpu-bar-fill ${summaryUtilClass}" style="width:${avgUtil}%"></div><span class="gpu-bar-text">${avgUtil}%</span></div></div></div>`;
+    html += `<div class="gpu-summary-item"><span class="gpu-summary-label">Memory</span><span class="gpu-summary-value">${memUsedGB} / ${memTotalGB} GB</span></div>`;
+    html += `<div class="gpu-summary-item"><span class="gpu-summary-label">Peak Temp</span><span class="gpu-summary-value"><span class="gpu-temp-dot ${summaryTempClass}"></span>${peakTemp}&deg;C</span></div>`;
+    html += '</div>';
+  }
+
   html += '<table class="gpu-table"><thead><tr>';
   html += '<th>GPU</th><th>Utilization</th><th>Memory</th><th>Temp</th>';
   html += '</tr></thead><tbody>';
@@ -343,11 +379,18 @@ function buildJobGpuHtml(nodeData) {
 
     nodeInfo.gpus.forEach((gpu) => {
       const gpuUtil = parseInt(gpu.gpu_util) || 0;
+      const memUsed = parseInt(gpu.mem_used) || 0;
+      const memTotal = parseInt(gpu.mem_total) || 1;
+      const memPct = Math.round((memUsed / memTotal) * 100);
       const temp = parseInt(gpu.temperature) || 0;
 
       let utilClass = "util-low";
       if (gpuUtil > 80) utilClass = "util-high";
       else if (gpuUtil > 40) utilClass = "util-medium";
+
+      let memClass = "mem-low";
+      if (memPct > 80) memClass = "mem-high";
+      else if (memPct > 40) memClass = "mem-medium";
 
       let tempClass = "temp-normal";
       if (temp > 80) tempClass = "temp-high";
@@ -356,8 +399,8 @@ function buildJobGpuHtml(nodeData) {
       html += '<tr>';
       html += `<td class="gpu-cell-id"><span class="gpu-idx">${escapeHtml(gpu.index)}</span> <span class="gpu-model">${escapeHtml(gpu.name)}</span></td>`;
       html += `<td class="gpu-cell-util"><div class="gpu-bar"><div class="gpu-bar-fill ${utilClass}" style="width:${gpuUtil}%"></div><span class="gpu-bar-text">${escapeHtml(gpu.gpu_util)}%</span></div></td>`;
-      html += `<td class="gpu-cell-mem">${escapeHtml(gpu.mem_used)}<span class="gpu-mem-sep"> / </span>${escapeHtml(gpu.mem_total)} MB</td>`;
-      html += `<td class="gpu-cell-temp ${tempClass}">${escapeHtml(gpu.temperature)}&deg;C</td>`;
+      html += `<td class="gpu-cell-mem"><div class="gpu-bar"><div class="gpu-bar-fill ${memClass}" style="width:${memPct}%"></div><span class="gpu-bar-text">${escapeHtml(gpu.mem_used)} / ${escapeHtml(gpu.mem_total)} MB</span></div></td>`;
+      html += `<td class="gpu-cell-temp ${tempClass}"><span class="gpu-temp-dot ${tempClass}"></span>${escapeHtml(gpu.temperature)}&deg;C</td>`;
       html += '</tr>';
     });
   });
@@ -414,6 +457,7 @@ async function loadConfig() {
 
 async function showConfigModal() {
   const overlay = document.getElementById("config-overlay");
+  document.getElementById("config-error").textContent = "";
   document.getElementById("config-recent-count").value = currentConfig.recent_jobs_count || 5;
   document.getElementById("config-refresh-interval").value = currentConfig.refresh_interval ?? 10;
   document.getElementById("config-timestamp-format").value = currentConfig.timestamp_format || "absolute";
@@ -430,8 +474,10 @@ async function saveConfig() {
   const interval = parseInt(document.getElementById("config-refresh-interval").value);
   const timestampFormat = document.getElementById("config-timestamp-format").value;
 
+  const errorEl = document.getElementById("config-error");
+
   if (isNaN(count) || count < 1 || count > 50) {
-    alert("Please enter a number between 1 and 50");
+    errorEl.textContent = "Please enter a number between 1 and 50";
     return;
   }
 
@@ -450,10 +496,10 @@ async function saveConfig() {
       closeConfigModal();
       fetchJobs();
     } else {
-      alert("Failed to save config: " + (result.error || "Unknown error"));
+      errorEl.textContent = "Failed to save: " + (result.error || "Unknown error");
     }
   } catch (err) {
-    alert("Failed to save config: " + err.message);
+    errorEl.textContent = "Failed to save: " + err.message;
   }
 }
 
@@ -661,7 +707,7 @@ function renderServerFull(section, serverData, animate) {
     html += `<div class="no-jobs">All quiet on ${escapeHtml(name)}. No jobs in queue.</div>`;
   } else {
     html += `<div class="table-wrap"><table><thead><tr>`;
-    COLUMNS.forEach((c) => { html += `<th>${c.label}</th>`; });
+    COLUMNS.forEach((c) => { html += `<th data-col="${c.key}">${c.label}</th>`; });
     html += `</tr></thead><tbody>`;
     serverData.jobs.forEach((job, idx) => {
       html += buildRowHtml(name, job, animate ? idx * 0.03 : -1);
@@ -690,6 +736,7 @@ function buildRowHtml(serverName, job, animDelay) {
 
   // Check if job has GPUs
   const hasGpu = job["TRES_PER_NODE"] && job["TRES_PER_NODE"].toLowerCase().includes("gpu");
+  const showGpuTrigger = hasGpu && (state === "RUNNING" || state === "COMPLETING");
   const jobKey = `${serverName}-${job.JOBID}`;
   const gpuActive = jobGpuOpen[jobKey] ? " gpu-active" : "";
 
@@ -697,10 +744,10 @@ function buildRowHtml(serverName, job, animDelay) {
   COLUMNS.forEach((c) => {
     const cellContent = cellHtml(c, job);
 
-    // Make nodelist clickable for GPU jobs
-    if (c.key === "NODELIST(REASON)" && hasGpu) {
-      html += `<td data-col="${c.key}" class="gpu-nodelist" onclick="event.stopPropagation(); toggleJobGpu(event, '${serverName}', '${job.JOBID}')" title="Click to view GPU stats">`;
-      html += `<span class="gpu-node-link">${cellContent}</span>`;
+    // Make GPUs column clickable for running GPU jobs
+    if (c.key === "TRES_PER_NODE" && showGpuTrigger) {
+      html += `<td data-col="${c.key}" class="gpu-trigger" onclick="event.stopPropagation(); toggleJobGpu(event, '${serverName}', '${job.JOBID}')" title="View GPU stats">`;
+      html += `<span class="gpu-trigger-content">${cellContent} ${GPU_ICON}</span>`;
       html += `</td>`;
     } else {
       html += `<td data-col="${c.key}">${cellContent}</td>`;
@@ -745,6 +792,9 @@ function patchTable(section, serverData) {
     const hasGpu = job["TRES_PER_NODE"] && job["TRES_PER_NODE"].toLowerCase().includes("gpu");
     const jobKey = `${name}-${id}`;
 
+    const state = job["STATE"] || "";
+    const showGpuTrigger = hasGpu && (state === "RUNNING" || state === "COMPLETING");
+
     if (tr) {
       // Check if this row has a GPU details row after it
       const hasGpuRow = tr.nextElementSibling && tr.nextElementSibling.classList.contains("gpu-details-row");
@@ -765,25 +815,24 @@ function patchTable(section, serverData) {
 
         const newHtml = cellHtml(col, job);
 
-        // Special handling for nodelist column with GPU
-        if (col.key === "NODELIST(REASON)" && hasGpu) {
-          // Check if it already has the GPU styling
-          const hasGpuClass = td.classList.contains("gpu-nodelist");
+        // Special handling for GPU trigger column
+        if (col.key === "TRES_PER_NODE" && showGpuTrigger) {
+          const hasGpuClass = td.classList.contains("gpu-trigger");
           if (!hasGpuClass) {
-            // Rebuild the cell with GPU functionality
-            td.className = "gpu-nodelist";
+            td.className = "gpu-trigger";
             td.setAttribute("onclick", `event.stopPropagation(); toggleJobGpu(event, '${name}', '${id}')`);
-            td.setAttribute("title", "Click to view GPU stats");
-            td.innerHTML = `<span class="gpu-node-link">${newHtml}</span>`;
+            td.setAttribute("title", "View GPU stats");
+            td.innerHTML = `<span class="gpu-trigger-content">${newHtml} ${GPU_ICON}</span>`;
           } else {
-            // Update content but preserve structure
-            const link = td.querySelector(".gpu-node-link");
-            if (link && link.innerHTML !== newHtml) {
-              link.innerHTML = newHtml;
+            const link = td.querySelector(".gpu-trigger-content");
+            if (link) {
+              const newContent = `${newHtml} ${GPU_ICON}`;
+              if (link.innerHTML !== newContent) {
+                link.innerHTML = newContent;
+              }
             }
           }
-        } else if (col.key === "NODELIST(REASON)" && !hasGpu) {
-          // Remove GPU styling if no longer has GPU
+        } else if (col.key === "TRES_PER_NODE" && !showGpuTrigger) {
           td.className = "";
           td.removeAttribute("onclick");
           td.removeAttribute("title");
@@ -802,7 +851,6 @@ function patchTable(section, serverData) {
       });
 
       // Update clickable state
-      const state = job["STATE"] || "";
       const clickable = CLICKABLE_STATES.has(state);
       const baseClass = clickable ? "clickable" : "";
       const gpuClass = isGpuOpen ? " gpu-active" : "";
@@ -921,9 +969,28 @@ function updateInterval() {
   }
 }
 
+/* ── Column toggle ───────────────────────────────────── */
+
+function toggleAllColumns() {
+  document.body.classList.toggle("show-all-columns");
+  const btn = document.getElementById("col-toggle-btn");
+  const isActive = document.body.classList.contains("show-all-columns");
+  btn.classList.toggle("active", isActive);
+  sessionStorage.setItem("showAllColumns", isActive ? "1" : "");
+}
+
+function restoreColumnToggle() {
+  if (sessionStorage.getItem("showAllColumns") === "1") {
+    document.body.classList.add("show-all-columns");
+    const btn = document.getElementById("col-toggle-btn");
+    if (btn) btn.classList.add("active");
+  }
+}
+
 /* ── Init ────────────────────────────────────────────── */
 
 setGreeting();
+restoreColumnToggle();
 loadConfig().then(() => {
   fetchJobs();
   updateInterval();

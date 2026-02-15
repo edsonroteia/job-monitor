@@ -300,6 +300,39 @@ tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: #eef2ff; }
 tr.clickable:active td { background: #e0e7ff; }
 
+/* ── Job ID Copy Button ──────────────────────────────── */
+
+.job-id-copy {
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  margin: -0.25rem -0.5rem;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.job-id-copy:hover {
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.job-id-copy .copy-icon {
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.job-id-copy:hover .copy-icon {
+  opacity: 1;
+}
+
 /* ── Spinner ─────────────────────────────────────────── */
 
 .spinner {

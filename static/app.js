@@ -98,14 +98,61 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function copyJobId(jobId) {
+const COPY_ICON = `<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+const CHECK_ICON = `<svg class="copy-icon copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+async function copyJobId(jobId, btn) {
   try {
     await navigator.clipboard.writeText(jobId);
-    // Optional: Show a brief visual feedback (you can enhance this later)
-    console.log(`Copied job ID: ${jobId}`);
+    if (btn) {
+      const icon = btn.querySelector(".copy-icon");
+      if (icon) {
+        icon.outerHTML = CHECK_ICON;
+        const restore = () => {
+          const cur = btn.querySelector(".copy-icon");
+          if (cur) cur.outerHTML = COPY_ICON;
+          btn.removeEventListener("mouseleave", restore);
+        };
+        btn.addEventListener("mouseleave", restore);
+      }
+    }
   } catch (err) {
     console.error('Failed to copy job ID:', err);
   }
+}
+
+/** Format a SLURM timestamp as a relative time string (e.g. "5m ago", "2h30m ago"). */
+function formatRelativeTime(timestamp) {
+  if (!timestamp || timestamp === "Unknown" || timestamp === "N/A") return timestamp || "-";
+  // SLURM timestamps: "2025-02-15T14:30:00" or similar
+  const date = new Date(timestamp.replace("T", " "));
+  if (isNaN(date.getTime())) return timestamp;
+  const now = new Date();
+  const diffMs = now - date;
+  if (diffMs < 0) return timestamp; // future timestamps shown as-is
+
+  const totalMin = Math.floor(diffMs / 60000);
+  if (totalMin < 1) return "just now";
+  if (totalMin < 60) return `${totalMin}m ago`;
+
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours < 24) {
+    return mins > 0 ? `${hours}h${mins}m ago` : `${hours}h ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  if (remHours > 0) return `${days}d${remHours}h ago`;
+  return `${days}d ago`;
+}
+
+/** Format a timestamp value according to user preference. */
+function formatTimestamp(val) {
+  if ((currentConfig.timestamp_format || "absolute") === "relative") {
+    return formatRelativeTime(val);
+  }
+  return escapeHtml(val);
 }
 
 function formatGres(val) {
@@ -120,10 +167,13 @@ function cellHtml(col, job) {
     return `<span class="badge ${badgeClass(val)}">${val}</span>`;
   }
   if (col.key === "JOBID") {
-    return `<button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}')" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>`;
+    return `<button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}', this)" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>`;
   }
   if (col.key === "TRES_PER_NODE") {
     return formatGres(val);
+  }
+  if (col.key === "SUBMIT_TIME") {
+    return formatTimestamp(val);
   }
   // For PENDING jobs, show START_TIME instead of elapsed time
   if (col.key === "TIME" && job.STATE === "PENDING") {
@@ -162,7 +212,9 @@ function buildRecentTableHtml(serverName, recentJobs) {
       if (c.key === "State") {
         html += `<td><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
       } else if (c.key === "JobID") {
-        html += `<td><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}')" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
+        html += `<td><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}', this)" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
+      } else if (c.key === "Start" || c.key === "End") {
+        html += `<td>${formatTimestamp(val)}</td>`;
       } else {
         html += `<td>${escapeHtml(val)}</td>`;
       }
@@ -370,6 +422,7 @@ async function showConfigModal() {
   const overlay = document.getElementById("config-overlay");
   document.getElementById("config-recent-count").value = currentConfig.recent_jobs_count || 5;
   document.getElementById("config-refresh-interval").value = currentConfig.refresh_interval ?? 10;
+  document.getElementById("config-timestamp-format").value = currentConfig.timestamp_format || "absolute";
   overlay.classList.add("active");
 }
 
@@ -381,6 +434,7 @@ function closeConfigModal(event) {
 async function saveConfig() {
   const count = parseInt(document.getElementById("config-recent-count").value);
   const interval = parseInt(document.getElementById("config-refresh-interval").value);
+  const timestampFormat = document.getElementById("config-timestamp-format").value;
 
   if (isNaN(count) || count < 1 || count > 50) {
     alert("Please enter a number between 1 and 50");
@@ -391,7 +445,7 @@ async function saveConfig() {
     const resp = await fetch("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval })
+      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval, timestamp_format: timestampFormat })
     });
 
     const result = await resp.json();

@@ -17,7 +17,8 @@ JOB_LOG_FILE = "job_log.json"
 DEFAULT_CONFIG = {
     "servers": ["juwels", "ferranti"],
     "recent_jobs_count": 5,
-    "refresh_interval": 10
+    "refresh_interval": 10,
+    "timestamp_format": "absolute"
 }
 
 
@@ -415,6 +416,12 @@ def api_update_config():
             interval = new_config["refresh_interval"]
             if not isinstance(interval, int) or interval not in (0, 5, 10, 30, 60):
                 return jsonify({"error": "refresh_interval must be 0, 5, 10, 30, or 60"}), 400
+
+        # Validate timestamp_format
+        if "timestamp_format" in new_config:
+            fmt = new_config["timestamp_format"]
+            if fmt not in ("absolute", "relative"):
+                return jsonify({"error": "timestamp_format must be 'absolute' or 'relative'"}), 400
 
         config = load_config()
         config.update(new_config)

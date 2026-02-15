@@ -4,3 +4,6 @@ __pycache__/
 venv/
 config.json
 job_log.json
+.server.pid
+.server.log
+JobMonitor.app/

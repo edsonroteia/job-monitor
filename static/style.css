@@ -336,6 +336,11 @@ tr.clickable:active td { background: #e0e7ff; }
   opacity: 1;
 }
 
+.job-id-copy .copy-icon.copied {
+  opacity: 1;
+  color: #22c55e;
+}
+
 /* ── Spinner ─────────────────────────────────────────── */
 
 .spinner {

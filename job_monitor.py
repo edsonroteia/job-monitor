@@ -240,7 +240,7 @@ def fetch_job_gpu_info(server, jobid):
         for node in nodes:
             # Run nvidia-smi on the node
             result = subprocess.run(
-                ["ssh", server,
+                ["ssh", "-A", server,
                  f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {node} "
                  f"nvidia-smi --query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu "
                  f"--format=csv,noheader,nounits"],

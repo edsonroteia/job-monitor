@@ -187,6 +187,36 @@ def fetch_recent_jobs(server, count=5):
         return []
 
 
+def _expand_nodelist(server, nodelist):
+    """Expand a SLURM nodelist expression into individual node names."""
+    try:
+        result = subprocess.run(
+            ["ssh", server, f"scontrol show hostnames {nodelist}"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().splitlines()
+    except Exception:
+        pass
+    return [nodelist]
+
+
+def _parse_gpu_indices(gres):
+    """Parse GPU indices from GRES string, handling ranges and comma-separated values."""
+    gpu_indices = []
+    if 'IDX:' not in gres:
+        return gpu_indices
+    idx_part = gres.split('IDX:')[1].rstrip(')')
+    for segment in idx_part.split(','):
+        segment = segment.strip()
+        if '-' in segment:
+            start, end = segment.split('-', 1)
+            gpu_indices.extend(range(int(start), int(end) + 1))
+        else:
+            gpu_indices.append(int(segment))
+    return gpu_indices
+
+
 def fetch_job_gpu_info(server, jobid):
     """Fetch GPU allocation and stats for a specific job."""
     try:
@@ -208,40 +238,18 @@ def fetch_job_gpu_info(server, jobid):
         nodelist = parts[0].strip()
         gres = parts[1].strip()
 
-        # Parse GPU indices from GRES
-        gpu_indices = []
-        if 'IDX:' in gres:
-            idx_part = gres.split('IDX:')[1].rstrip(')')
-            if '-' in idx_part:
-                start, end = idx_part.split('-')
-                gpu_indices = list(range(int(start), int(end) + 1))
-            else:
-                gpu_indices = [int(idx_part)]
-
-        # Expand nodelist
-        nodes = []
-        if '[' in nodelist:
-            base = nodelist.split('[')[0]
-            range_part = nodelist.split('[')[1].rstrip(']')
-            if '-' in range_part:
-                start, end = range_part.split('-')
-                for i in range(int(start), int(end) + 1):
-                    nodes.append(f"{base}{str(i).zfill(len(start))}")
-            else:
-                nodes.append(f"{base}{range_part}")
-        else:
-            nodes.append(nodelist)
+        gpu_indices = _parse_gpu_indices(gres)
+        nodes = _expand_nodelist(server, nodelist)
 
         if not nodes:
             return {"error": "No nodes found for this job"}
 
-        # Fetch GPU stats for each node
+        # Fetch GPU stats for each node via srun within the job's allocation
         node_gpus = []
         for node in nodes:
-            # Run nvidia-smi on the node
             result = subprocess.run(
-                ["ssh", "-A", server,
-                 f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {node} "
+                ["ssh", server,
+                 f"srun --jobid={jobid} --nodes=1 --ntasks=1 -w {node} --overlap "
                  f"nvidia-smi --query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu "
                  f"--format=csv,noheader,nounits"],
                 capture_output=True,

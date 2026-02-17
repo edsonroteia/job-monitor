@@ -431,6 +431,12 @@ def api_update_config():
             if fmt not in ("absolute", "relative"):
                 return jsonify({"error": "timestamp_format must be 'absolute' or 'relative'"}), 400
 
+        # Validate cluster_timezone
+        if "cluster_timezone" in new_config:
+            tz = new_config["cluster_timezone"]
+            if not isinstance(tz, str) or len(tz) > 50:
+                return jsonify({"error": "Invalid cluster_timezone"}), 400
+
         config = load_config()
         config.update(new_config)
 

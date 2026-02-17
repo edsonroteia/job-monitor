@@ -122,12 +122,51 @@ async function copyJobId(jobId, btn) {
   }
 }
 
+/**
+ * Parse a SLURM timestamp (no timezone info) as if it were in the cluster timezone.
+ * Returns a Date object in UTC, or null if unparseable.
+ */
+function parseClusterTimestamp(timestamp) {
+  if (!timestamp || timestamp === "Unknown" || timestamp === "N/A") return null;
+  const tz = currentConfig.cluster_timezone || "UTC";
+  // SLURM timestamps: "2025-02-15T14:30:00"
+  // We interpret it in the cluster timezone by formatting a known reference,
+  // then computing the offset.
+  const naive = new Date(timestamp.replace("T", " "));
+  if (isNaN(naive.getTime())) return null;
+
+  // Format the naive date's UTC millis in the cluster timezone to find the offset
+  // We build a date that, when interpreted in the cluster tz, equals the naive string.
+  // Strategy: binary-correct via Intl — parse the cluster-local wall clock.
+  try {
+    // Create a formatter that outputs parts in the cluster timezone
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    });
+    // We want to find UTC ms such that formatting it in cluster tz gives us the naive string.
+    // Start with the naive date as a guess, then correct.
+    const guess = naive.getTime();
+    const parts = fmt.formatToParts(new Date(guess));
+    const p = {};
+    parts.forEach(({ type, value }) => { p[type] = value; });
+    const formatted = `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+    const guessLocal = new Date(formatted.replace("T", " ")).getTime();
+    // The difference tells us the offset
+    const offset = guess - guessLocal;
+    return new Date(guess + offset);
+  } catch (e) {
+    return naive; // fallback if timezone is invalid
+  }
+}
+
 /** Format a SLURM timestamp as a relative time string (e.g. "5m ago", "2h30m ago"). */
 function formatRelativeTime(timestamp) {
   if (!timestamp || timestamp === "Unknown" || timestamp === "N/A") return timestamp || "-";
-  // SLURM timestamps: "2025-02-15T14:30:00" or similar
-  const date = new Date(timestamp.replace("T", " "));
-  if (isNaN(date.getTime())) return timestamp;
+  const date = parseClusterTimestamp(timestamp);
+  if (!date) return timestamp;
   const now = new Date();
   const diffMs = now - date;
   if (diffMs < 0) return timestamp; // future timestamps shown as-is
@@ -153,12 +192,37 @@ function formatTimestamp(val) {
   if ((currentConfig.timestamp_format || "absolute") === "relative") {
     return formatRelativeTime(val);
   }
+  // For absolute mode, convert cluster timestamp to local display
+  const date = parseClusterTimestamp(val);
+  if (date) {
+    return escapeHtml(date.toLocaleString("sv-SE", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    }).replace(" ", "T"));
+  }
   return escapeHtml(val);
 }
 
 function formatGres(val) {
   const m = val.match(/gpu[^:]*:(\d+)/i);
   return m ? m[1] + " GPU" : (val && val !== "N/A" ? val : "-");
+}
+
+/** Get a raw sortable value for a column (used in data-sort attributes). */
+function cellSortValue(col, job) {
+  const val = job[col.key] || "";
+  if (col.key === "JOBID" || col.key === "JobID") return val;
+  if (col.key === "TRES_PER_NODE") {
+    const m = val.match(/gpu[^:]*:(\d+)/i);
+    return m ? m[1] : "0";
+  }
+  if (col.key === "SUBMIT_TIME" || col.key === "Start" || col.key === "End") {
+    const d = parseClusterTimestamp(val);
+    return d ? String(d.getTime()) : "0";
+  }
+  if (col.key === "NODES") return val;
+  return val;
 }
 
 /** Return the display HTML for a single cell value. */
@@ -202,22 +266,29 @@ function buildRecentSection(serverName, recentJobs, isOpen) {
 
 function buildRecentTableHtml(serverName, recentJobs) {
   let html = `<div class="table-wrap"><table class="recent-table"><thead><tr>`;
-  RECENT_COLUMNS.forEach((c) => { html += `<th data-col="${c.key}">${c.label}</th>`; });
+  const recentSort = sortState[`recent-${serverName}`];
+  RECENT_COLUMNS.forEach((c) => {
+    const isSorted = recentSort && recentSort.key === c.key;
+    const cls = isSorted ? ` class="sortable sort-active sort-${recentSort.dir}"` : ` class="sortable"`;
+    const arrow = isSorted ? (recentSort.dir === "asc" ? SORT_ASC_ICON : SORT_DESC_ICON) : "";
+    html += `<th data-col="${c.key}"${cls} onclick="handleSort('${serverName}','${c.key}','recent')">${c.label}${arrow}</th>`;
+  });
   html += `</tr></thead><tbody>`;
   recentJobs.forEach((job) => {
     const jobName = (job.JobName || "").replace(/'/g, "\\'");
     const onclick = `onclick="showJobOutput('${serverName}','${job.JobID}','${jobName}')"`;
-    html += `<tr class="clickable" ${onclick} title="Click to view output" data-jobname="${(job.JobName || '').toLowerCase()}">`;
+    html += `<tr class="clickable" ${onclick} title="Click to view output" data-jobid="${job.JobID}" data-jobname="${(job.JobName || '').toLowerCase()}">`;
     RECENT_COLUMNS.forEach((c) => {
       const val = job[c.key] || "";
+      const sv = escapeHtml(cellSortValue(c, job));
       if (c.key === "State") {
-        html += `<td data-col="${c.key}"><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
+        html += `<td data-col="${c.key}" data-sort="${sv}"><span class="badge ${badgeClass(val)}">${escapeHtml(val)}</span></td>`;
       } else if (c.key === "JobID") {
-        html += `<td data-col="${c.key}"><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}', this)" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
+        html += `<td data-col="${c.key}" data-sort="${sv}"><button class="job-id-copy" onclick="event.stopPropagation(); copyJobId('${escapeHtml(val)}', this)" title="Click to copy">${escapeHtml(val)}<svg class="copy-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></td>`;
       } else if (c.key === "Start" || c.key === "End") {
-        html += `<td data-col="${c.key}">${formatTimestamp(val)}</td>`;
+        html += `<td data-col="${c.key}" data-sort="${sv}">${formatTimestamp(val)}</td>`;
       } else {
-        html += `<td data-col="${c.key}">${escapeHtml(val)}</td>`;
+        html += `<td data-col="${c.key}" data-sort="${sv}">${escapeHtml(val)}</td>`;
       }
     });
     html += `</tr>`;
@@ -461,6 +532,7 @@ async function showConfigModal() {
   document.getElementById("config-recent-count").value = currentConfig.recent_jobs_count || 5;
   document.getElementById("config-refresh-interval").value = currentConfig.refresh_interval ?? 10;
   document.getElementById("config-timestamp-format").value = currentConfig.timestamp_format || "absolute";
+  document.getElementById("config-cluster-timezone").value = currentConfig.cluster_timezone || "UTC";
   overlay.classList.add("active");
 }
 
@@ -473,6 +545,7 @@ async function saveConfig() {
   const count = parseInt(document.getElementById("config-recent-count").value);
   const interval = parseInt(document.getElementById("config-refresh-interval").value);
   const timestampFormat = document.getElementById("config-timestamp-format").value;
+  const clusterTimezone = document.getElementById("config-cluster-timezone").value;
 
   const errorEl = document.getElementById("config-error");
 
@@ -485,7 +558,7 @@ async function saveConfig() {
     const resp = await fetch("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval, timestamp_format: timestampFormat })
+      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval, timestamp_format: timestampFormat, cluster_timezone: clusterTimezone })
     });
 
     const result = await resp.json();
@@ -707,7 +780,13 @@ function renderServerFull(section, serverData, animate) {
     html += `<div class="no-jobs">All quiet on ${escapeHtml(name)}. No jobs in queue.</div>`;
   } else {
     html += `<div class="table-wrap"><table><thead><tr>`;
-    COLUMNS.forEach((c) => { html += `<th data-col="${c.key}">${c.label}</th>`; });
+    const activeSort = sortState[`active-${name}`];
+    COLUMNS.forEach((c) => {
+      const isSorted = activeSort && activeSort.key === c.key;
+      const cls = isSorted ? ` class="sortable sort-active sort-${activeSort.dir}"` : ` class="sortable"`;
+      const arrow = isSorted ? (activeSort.dir === "asc" ? SORT_ASC_ICON : SORT_DESC_ICON) : "";
+      html += `<th data-col="${c.key}"${cls} onclick="handleSort('${name}','${c.key}','active')">${c.label}${arrow}</th>`;
+    });
     html += `</tr></thead><tbody>`;
     serverData.jobs.forEach((job, idx) => {
       html += buildRowHtml(name, job, animate ? idx * 0.03 : -1);
@@ -743,14 +822,15 @@ function buildRowHtml(serverName, job, animDelay) {
   let html = `<tr class="${cls}${gpuActive}" ${onclick} title="${clickable ? "Click to view output" : ""}" data-jobid="${job.JOBID}" data-jobname="${(job.NAME || '').toLowerCase()}"${animStyle}>`;
   COLUMNS.forEach((c) => {
     const cellContent = cellHtml(c, job);
+    const sv = escapeHtml(cellSortValue(c, job));
 
     // Make GPUs column clickable for running GPU jobs
     if (c.key === "TRES_PER_NODE" && showGpuTrigger) {
-      html += `<td data-col="${c.key}" class="gpu-trigger" onclick="event.stopPropagation(); toggleJobGpu(event, '${serverName}', '${job.JOBID}')" title="View GPU stats">`;
+      html += `<td data-col="${c.key}" data-sort="${sv}" class="gpu-trigger" onclick="event.stopPropagation(); toggleJobGpu(event, '${serverName}', '${job.JOBID}')" title="View GPU stats">`;
       html += `<span class="gpu-trigger-content">${cellContent} ${GPU_ICON}</span>`;
       html += `</td>`;
     } else {
-      html += `<td data-col="${c.key}">${cellContent}</td>`;
+      html += `<td data-col="${c.key}" data-sort="${sv}">${cellContent}</td>`;
     }
   });
   html += `</tr>`;
@@ -812,6 +892,9 @@ function patchTable(section, serverData) {
       COLUMNS.forEach((col) => {
         const td = tr.querySelector(`td[data-col="${col.key}"]`);
         if (!td) return;
+
+        // Update sort value
+        td.dataset.sort = cellSortValue(col, job);
 
         const newHtml = cellHtml(col, job);
 
@@ -934,6 +1017,13 @@ async function fetchJobs() {
     data.forEach((s) => { newPrev[s.server] = s; });
     prevData = newPrev;
 
+    // Reapply active sorts after data update
+    for (const stateKey of Object.keys(sortState)) {
+      const [tableType, ...rest] = stateKey.split("-");
+      const serverName = rest.join("-");
+      applySortToTable(serverName, tableType);
+    }
+
     // Reapply name filter after data update
     if (nameFilter !== "") {
       applyNameFilter();
@@ -985,6 +1075,131 @@ function restoreColumnToggle() {
     const btn = document.getElementById("col-toggle-btn");
     if (btn) btn.classList.add("active");
   }
+}
+
+/* ── Table sorting ───────────────────────────────────── */
+
+// Per-table sort state: { "server-<name>": { key, dir }, "recent-<name>": { key, dir } }
+const sortState = {};
+
+const SORT_ASC_ICON = `<span class="sort-arrow sort-asc">&#9650;</span>`;
+const SORT_DESC_ICON = `<span class="sort-arrow sort-desc">&#9660;</span>`;
+
+/** Extract a sortable value from a cell's data-sort attribute. */
+function sortValue(row, colKey) {
+  const td = row.querySelector(`td[data-col="${colKey}"]`);
+  if (!td) return "";
+  return td.dataset.sort ?? td.textContent.trim();
+}
+
+/** Compare two sort values — numeric if both parseable, otherwise string. */
+function compareSortValues(a, b) {
+  const na = Number(a);
+  const nb = Number(b);
+  if (!isNaN(na) && !isNaN(nb) && a !== "" && b !== "") return na - nb;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+}
+
+/** Handle a click on a <th> to sort the table. */
+function handleSort(serverName, colKey, tableType) {
+  const stateKey = `${tableType}-${serverName}`;
+  const cur = sortState[stateKey];
+
+  // Cycle: none -> asc -> desc -> none
+  let dir;
+  if (!cur || cur.key !== colKey) {
+    dir = "asc";
+  } else if (cur.dir === "asc") {
+    dir = "desc";
+  } else {
+    dir = null; // reset to default order
+  }
+
+  if (dir) {
+    sortState[stateKey] = { key: colKey, dir };
+  } else {
+    delete sortState[stateKey];
+  }
+
+  applySortToTable(serverName, tableType);
+}
+
+/** Apply the current sort state to a table without changing it. */
+function applySortToTable(serverName, tableType) {
+  const stateKey = `${tableType}-${serverName}`;
+  const sort = sortState[stateKey];
+  const colKey = sort ? sort.key : null;
+  const dir = sort ? sort.dir : null;
+
+  const section = document.getElementById(`server-${serverName}`);
+  if (!section) return;
+
+  // Find the correct table
+  let table;
+  if (tableType === "active") {
+    table = section.querySelector(".table-wrap > table:not(.recent-table)");
+  } else {
+    table = section.querySelector(".recent-table");
+  }
+  if (!table) return;
+
+  // Update header indicators
+  table.querySelectorAll("th").forEach((th) => {
+    th.classList.remove("sort-active", "sort-asc", "sort-desc");
+    const arrow = th.querySelector(".sort-arrow");
+    if (arrow) arrow.remove();
+  });
+
+  if (dir && colKey) {
+    const activeTh = table.querySelector(`th[data-col="${colKey}"]`);
+    if (activeTh) {
+      activeTh.classList.add("sort-active", `sort-${dir}`);
+      activeTh.insertAdjacentHTML("beforeend", dir === "asc" ? SORT_ASC_ICON : SORT_DESC_ICON);
+    }
+  }
+
+  const tbody = table.querySelector("tbody");
+  if (!tbody) return;
+
+  // Collect sortable rows (skip gpu-details-row)
+  const rows = Array.from(tbody.querySelectorAll("tr[data-jobid]"))
+    .filter(tr => !tr.classList.contains("gpu-details-row"));
+
+  if (!dir) {
+    // Reset to original order
+    const origData = prevData[serverName];
+    if (origData) {
+      const orderList = tableType === "active" ? origData.jobs : origData.recent_jobs;
+      if (orderList) {
+        const idKey = tableType === "active" ? "JOBID" : "JobID";
+        const orderMap = new Map(orderList.map((j, i) => [j[idKey], i]));
+        rows.sort((a, b) => {
+          const ai = orderMap.get(a.dataset.jobid) ?? 9999;
+          const bi = orderMap.get(b.dataset.jobid) ?? 9999;
+          return ai - bi;
+        });
+      }
+    }
+  } else {
+    rows.sort((a, b) => {
+      const va = sortValue(a, colKey);
+      const vb = sortValue(b, colKey);
+      const cmp = compareSortValues(va, vb);
+      return dir === "desc" ? -cmp : cmp;
+    });
+  }
+
+  // Reorder DOM (move rows + their GPU detail rows together)
+  rows.forEach((row) => {
+    tbody.appendChild(row);
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("gpu-details-row")) {
+      tbody.appendChild(next);
+    }
+  });
+
+  // Reapply name filter
+  if (nameFilter !== "") applyNameFilter();
 }
 
 /* ── Init ────────────────────────────────────────────── */

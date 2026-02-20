@@ -38,6 +38,98 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Dark mode theme */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1a1a;
+    --surface: #242424;
+    --surface-raised: #2d2d2d;
+    --text: #e8e8e8;
+    --text-2: #a0a0a0;
+    --text-3: #757575;
+    --accent: #2d9b7a;
+    --accent-hover: #35b895;
+    --accent-soft: #1a4d3a;
+    --border: #3d3d3d;
+    --border-light: #333333;
+
+    --running-fg: #5fd4a4;
+    --running-bg: #1a4d3a;
+    --pending-fg: #f4d47a;
+    --pending-bg: #4d3f1a;
+    --completing-fg: #5fa8e8;
+    --completing-bg: #1a3d5c;
+    --completed-fg: #5fa8e8;
+    --completed-bg: #1a3d5c;
+    --failed-fg: #ff6b6b;
+    --failed-bg: #5c1f1a;
+    --cancelled-fg: #ff6b6b;
+    --cancelled-bg: #5c1f1a;
+    --timeout-fg: #ffb366;
+    --timeout-bg: #5c3d1a;
+  }
+}
+
+/* Explicit dark mode via data attribute */
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --surface: #242424;
+  --surface-raised: #2d2d2d;
+  --text: #e8e8e8;
+  --text-2: #a0a0a0;
+  --text-3: #757575;
+  --accent: #2d9b7a;
+  --accent-hover: #35b895;
+  --accent-soft: #1a4d3a;
+  --border: #3d3d3d;
+  --border-light: #333333;
+
+  --running-fg: #5fd4a4;
+  --running-bg: #1a4d3a;
+  --pending-fg: #f4d47a;
+  --pending-bg: #4d3f1a;
+  --completing-fg: #5fa8e8;
+  --completing-bg: #1a3d5c;
+  --completed-fg: #5fa8e8;
+  --completed-bg: #1a3d5c;
+  --failed-fg: #ff6b6b;
+  --failed-bg: #5c1f1a;
+  --cancelled-fg: #ff6b6b;
+  --cancelled-bg: #5c1f1a;
+  --timeout-fg: #ffb366;
+  --timeout-bg: #5c3d1a;
+}
+
+/* Explicit light mode via data attribute */
+[data-theme="light"] {
+  --bg: #e9e3d9;
+  --surface: #f4f1ea;
+  --surface-raised: #faf8f3;
+  --text: #2a2520;
+  --text-2: #7d776e;
+  --text-3: #a39d94;
+  --accent: #1a6b54;
+  --accent-hover: #145846;
+  --accent-soft: #ddeee7;
+  --border: #d0cac0;
+  --border-light: #ddd8ce;
+
+  --running-fg: #1a6b54;
+  --running-bg: #ddeee7;
+  --pending-fg: #7d5a00;
+  --pending-bg: #f4ecd0;
+  --completing-fg: #2e5490;
+  --completing-bg: #dce6f4;
+  --completed-fg: #2e5490;
+  --completed-bg: #dce6f4;
+  --failed-fg: #a62015;
+  --failed-bg: #f9e0dd;
+  --cancelled-fg: #a62015;
+  --cancelled-bg: #f9e0dd;
+  --timeout-fg: #b33d0a;
+  --timeout-bg: #f9e2d0;
+}
+
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -190,6 +282,32 @@ header {
 #refresh-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+#theme-toggle {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.95rem;
+  font-family: var(--font);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s var(--ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 32px;
+}
+
+#theme-toggle:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+#theme-toggle:active {
+  background: var(--bg);
 }
 
 /* ── Server sections ────────────────────────────── */

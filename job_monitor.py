@@ -3,6 +3,7 @@
 
 import json
 import os
+import shlex
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
@@ -86,6 +87,101 @@ def _find_output_paths_scontrol(server, jobid):
                 stderr_path = path
     return stdout_path, stderr_path
 
+
+
+def _cache_output_paths(server, job_ids):
+    """Batch-fetch and cache stdout/stderr paths for jobs not yet in the log."""
+    if not job_ids:
+        return
+    log = load_job_log()
+    server_log = log.get(server, {})
+    uncached = [jid for jid in job_ids
+                if not server_log.get(jid, {}).get("stdout_path")]
+    if not uncached:
+        return
+
+    try:
+        id_arg = ",".join(uncached)
+        result = subprocess.run(
+            ["ssh", server, "scontrol", "show", "job", id_arg],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return
+
+        # Parse multi-job scontrol output (blocks separated by blank lines)
+        current_id = None
+        stdout_path = None
+        stderr_path = None
+        if server not in log:
+            log[server] = {}
+
+        def _flush():
+            if current_id and (stdout_path or stderr_path):
+                if current_id not in log[server]:
+                    log[server][current_id] = {}
+                if stdout_path:
+                    log[server][current_id]["stdout_path"] = stdout_path
+                if stderr_path:
+                    log[server][current_id]["stderr_path"] = stderr_path
+
+        for part in result.stdout.split():
+            if part.startswith("JobId="):
+                _flush()
+                current_id = part.split("=", 1)[1]
+                stdout_path = None
+                stderr_path = None
+            elif part.startswith("StdOut="):
+                path = part.split("=", 1)[1]
+                if path and path != "(null)":
+                    stdout_path = path
+            elif part.startswith("StdErr="):
+                path = part.split("=", 1)[1]
+                if path and path != "(null)":
+                    stderr_path = path
+        _flush()
+        save_job_log(log)
+    except Exception:
+        pass
+
+
+def _find_output_paths_sacct(server, jobid):
+    """Fallback: use sacct to get WorkDir then check for default slurm output files."""
+    try:
+        result = subprocess.run(
+            ["ssh", server,
+             f"sacct --parsable2 --noheader -j {jobid} --format=WorkDir --allocations"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None, None
+
+        workdir = result.stdout.strip().splitlines()[0].strip()
+        if not workdir:
+            return None, None
+
+        # Check for default slurm output files in the working directory
+        stdout_candidate = f"{workdir}/slurm-{jobid}.out"
+        stderr_candidate = f"{workdir}/slurm-{jobid}.err"
+        check_cmd = (
+            f'stdout=""; stderr=""; '
+            f'[ -f "{stdout_candidate}" ] && stdout="{stdout_candidate}"; '
+            f'[ -f "{stderr_candidate}" ] && stderr="{stderr_candidate}"; '
+            f'echo "$stdout|$stderr"'
+        )
+        result = subprocess.run(
+            ["ssh", server, check_cmd],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return None, None
+
+        parts = result.stdout.strip().split("|", 1)
+        stdout_path = parts[0] if parts[0] else None
+        stderr_path = parts[1] if len(parts) > 1 and parts[1] else None
+        return stdout_path, stderr_path
+    except Exception:
+        return None, None
 
 
 def load_config():
@@ -210,11 +306,150 @@ def _parse_gpu_indices(gres):
     for segment in idx_part.split(','):
         segment = segment.strip()
         if '-' in segment:
-            start, end = segment.split('-', 1)
-            gpu_indices.extend(range(int(start), int(end) + 1))
+            try:
+                start, end = segment.split('-', 1)
+                gpu_indices.extend(range(int(start), int(end) + 1))
+            except ValueError:
+                continue
         else:
-            gpu_indices.append(int(segment))
+            try:
+                gpu_indices.append(int(segment))
+            except ValueError:
+                continue
     return gpu_indices
+
+
+GPU_QUERY_CMD = (
+    "nvidia-smi --query-gpu=index,name,utilization.gpu,utilization.memory,"
+    "memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits"
+)
+
+SSH_BASE_OPTS = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8"]
+SSH_RELAXED_HOSTKEY_OPTS = [
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "UserKnownHostsFile=/dev/null",
+    "-o", "LogLevel=ERROR",
+]
+
+
+def _ssh_cmd(host, remote_cmd, *, jump_host=None, relaxed_hostkey=False):
+    """Build an ssh command with shared options."""
+    cmd = SSH_BASE_OPTS.copy()
+    if jump_host:
+        cmd += ["-J", jump_host]
+    if relaxed_hostkey:
+        cmd += SSH_RELAXED_HOSTKEY_OPTS
+    cmd += [host, remote_cmd]
+    return cmd
+
+
+def _is_hostkey_error(stderr):
+    msg = (stderr or "").lower()
+    return (
+        "remote host identification has changed" in msg
+        or "host key verification failed" in msg
+    )
+
+
+def _compact_cmd_error(stderr, return_code):
+    """Keep command errors readable in the UI."""
+    if not stderr:
+        return f"command exited with code {return_code}"
+    compact = " ".join(stderr.strip().split())
+    if len(compact) > 220:
+        return compact[:217] + "..."
+    return compact
+
+
+def _query_node_gpu_stats(server, node, jobid):
+    """Query GPU stats on a node using progressively more permissive methods."""
+    node_q = shlex.quote(node)
+    attempts = [
+        ("direct ssh", _ssh_cmd(node, GPU_QUERY_CMD), _ssh_cmd(node, GPU_QUERY_CMD, relaxed_hostkey=True)),
+        (
+            "proxyjump ssh",
+            _ssh_cmd(node, GPU_QUERY_CMD, jump_host=server),
+            _ssh_cmd(node, GPU_QUERY_CMD, jump_host=server, relaxed_hostkey=True),
+        ),
+        (
+            "srun fallback",
+            _ssh_cmd(server, f"srun --jobid={jobid} --nodes=1 --ntasks=1 -w {node_q} --overlap {GPU_QUERY_CMD}"),
+            None,
+        ),
+    ]
+
+    errors = []
+    for label, cmd, relaxed_cmd in attempts:
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except subprocess.TimeoutExpired:
+            errors.append(f"{label}: timed out")
+            continue
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+            continue
+
+        if result.returncode == 0 and result.stdout.strip():
+            return {"method": label, "output": result.stdout}
+
+        err = _compact_cmd_error(result.stderr, result.returncode)
+
+        if relaxed_cmd and _is_hostkey_error(result.stderr):
+            try:
+                relaxed_result = subprocess.run(
+                    relaxed_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except subprocess.TimeoutExpired:
+                errors.append(f"{label} (relaxed host key): timed out")
+                continue
+            except Exception as exc:
+                errors.append(f"{label} (relaxed host key): {exc}")
+                continue
+
+            if relaxed_result.returncode == 0 and relaxed_result.stdout.strip():
+                return {"method": f"{label} (relaxed host key)", "output": relaxed_result.stdout}
+
+            relaxed_err = _compact_cmd_error(relaxed_result.stderr, relaxed_result.returncode)
+            errors.append(f"{label} (relaxed host key): {relaxed_err}")
+            continue
+
+        errors.append(f"{label}: {err}")
+
+    return {"error": " | ".join(errors)}
+
+
+def _parse_gpu_query_output(output, allowed_gpu_indices):
+    """Parse nvidia-smi CSV output into structured GPU rows."""
+    allowed = set(allowed_gpu_indices) if allowed_gpu_indices else None
+    gpus = []
+    for line in output.strip().splitlines():
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) < 7:
+            continue
+        try:
+            gpu_idx = int(parts[0])
+        except ValueError:
+            continue
+        if allowed is not None and gpu_idx not in allowed:
+            continue
+        gpus.append({
+            "index": parts[0],
+            "name": parts[1],
+            "gpu_util": parts[2],
+            "mem_util": parts[3],
+            "mem_used": parts[4],
+            "mem_total": parts[5],
+            "temperature": parts[6],
+        })
+    return gpus
 
 
 def fetch_job_gpu_info(server, jobid):
@@ -244,48 +479,28 @@ def fetch_job_gpu_info(server, jobid):
         if not nodes:
             return {"error": "No nodes found for this job"}
 
-        # Fetch GPU stats for each node via srun within the job's allocation
+        # Fetch GPU stats for each node.
         node_gpus = []
         for node in nodes:
-            result = subprocess.run(
-                ["ssh", server,
-                 f"srun --jobid={jobid} --nodes=1 --ntasks=1 -w {node} --overlap "
-                 f"nvidia-smi --query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu "
-                 f"--format=csv,noheader,nounits"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-
-            if result.returncode != 0:
+            query_result = _query_node_gpu_stats(server, node, jobid)
+            if "error" in query_result:
                 node_gpus.append({
                     "node": node,
-                    "error": result.stderr.strip() or "Failed to get GPU info",
+                    "error": query_result["error"],
                     "gpus": []
                 })
                 continue
 
-            gpus = []
-            for line in result.stdout.strip().splitlines():
-                parts = [p.strip() for p in line.split(',')]
-                if len(parts) >= 7:
-                    gpu_idx = int(parts[0])
-                    # Only include GPUs allocated to this job
-                    if not gpu_indices or gpu_idx in gpu_indices:
-                        gpus.append({
-                            "index": parts[0],
-                            "name": parts[1],
-                            "gpu_util": parts[2],
-                            "mem_util": parts[3],
-                            "mem_used": parts[4],
-                            "mem_total": parts[5],
-                            "temperature": parts[6],
-                        })
+            gpus = _parse_gpu_query_output(
+                query_result["output"],
+                gpu_indices,
+            )
 
             node_gpus.append({
                 "node": node,
                 "error": None,
-                "gpus": gpus
+                "gpus": gpus,
+                "method": query_result["method"],
             })
 
         return {"nodes": node_gpus}
@@ -303,6 +518,12 @@ def fetch_all_for_server(server, recent_count=5):
     active = fetch_jobs(server)
     recent = fetch_recent_jobs(server, recent_count)
     active["recent_jobs"] = recent
+
+    # Proactively cache output paths for active jobs
+    job_ids = [j["JOBID"] for j in active.get("jobs", []) if j.get("JOBID")]
+    if job_ids:
+        _cache_output_paths(server, job_ids)
+
     return active
 
 
@@ -314,12 +535,17 @@ def fetch_job_output(server, jobid):
         stdout_path = logged_job.get("stdout_path") if logged_job else None
         stderr_path = logged_job.get("stderr_path") if logged_job else None
 
-        # If not in log or paths missing, try to find them
+        # If not in log or paths missing, try scontrol then sacct fallback
         if not stdout_path and not stderr_path:
             stdout_path, stderr_path = _find_output_paths_scontrol(server, jobid)
 
-            # Save newly found paths to log
-            if stdout_path or stderr_path:
+        if not stdout_path and not stderr_path:
+            stdout_path, stderr_path = _find_output_paths_sacct(server, jobid)
+
+        # Cache any newly discovered paths
+        if stdout_path or stderr_path:
+            logged = get_job_from_log(server, jobid) or {}
+            if logged.get("stdout_path") != stdout_path or logged.get("stderr_path") != stderr_path:
                 job_info = {}
                 if stdout_path:
                     job_info["stdout_path"] = stdout_path
@@ -396,7 +622,7 @@ def api_job_output():
     config = load_config()
     if server not in config.get("servers", DEFAULT_CONFIG["servers"]):
         return jsonify({"error": "Unknown server"}), 400
-    if not jobid.isdigit():
+    if not jobid or not all(c.isdigit() or c == '_' for c in jobid):
         return jsonify({"error": "Invalid job ID"}), 400
     return jsonify(fetch_job_output(server, jobid))
 
@@ -449,7 +675,7 @@ def api_job_gpu_status():
     config = load_config()
     if server not in config.get("servers", DEFAULT_CONFIG["servers"]):
         return jsonify({"error": "Unknown server"}), 400
-    if not jobid.isdigit():
+    if not jobid or not all(c.isdigit() or c == '_' for c in jobid):
         return jsonify({"error": "Invalid job ID"}), 400
     return jsonify(fetch_job_gpu_info(server, jobid))
 

@@ -11,6 +11,34 @@ function setGreeting() {
   document.getElementById("greeting").textContent = msg;
 }
 
+/* ── Theme toggle ───────────────────────────────────── */
+
+function initTheme() {
+  const savedTheme = localStorage.getItem("job-monitor-theme");
+  const html = document.documentElement;
+
+  if (savedTheme) {
+    html.setAttribute("data-theme", savedTheme);
+  } else {
+    // Use system preference
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (prefersDark) {
+      html.setAttribute("data-theme", "dark");
+    } else {
+      html.setAttribute("data-theme", "light");
+    }
+  }
+}
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute("data-theme") || "light";
+  const newTheme = currentTheme === "light" ? "dark" : "light";
+
+  html.setAttribute("data-theme", newTheme);
+  localStorage.setItem("job-monitor-theme", newTheme);
+}
+
 /* ── Loading messages ────────────────────────────────── */
 
 const LOADING_MSGS = [
@@ -989,6 +1017,7 @@ function restoreColumnToggle() {
 
 /* ── Init ────────────────────────────────────────────── */
 
+initTheme();
 setGreeting();
 restoreColumnToggle();
 loadConfig().then(() => {

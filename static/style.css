@@ -416,6 +416,29 @@ th {
   white-space: nowrap;
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+th.sortable:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+}
+
+th.sort-active {
+  color: var(--accent);
+}
+
+.sort-arrow {
+  display: inline-block;
+  margin-left: 0.25rem;
+  font-size: 0.55rem;
+  vertical-align: middle;
+  line-height: 1;
+}
+
 td {
   padding: 0.5rem 0.65rem;
   border-bottom: 1px solid var(--border-light);

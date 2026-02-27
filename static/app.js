@@ -561,6 +561,7 @@ async function showConfigModal() {
   document.getElementById("config-refresh-interval").value = currentConfig.refresh_interval ?? 10;
   document.getElementById("config-timestamp-format").value = currentConfig.timestamp_format || "absolute";
   document.getElementById("config-cluster-timezone").value = currentConfig.cluster_timezone || "UTC";
+  document.getElementById("config-enable-cancel").checked = !!currentConfig.enable_job_cancel;
   overlay.classList.add("active");
 }
 
@@ -586,7 +587,7 @@ async function saveConfig() {
     const resp = await fetch("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval, timestamp_format: timestampFormat, cluster_timezone: clusterTimezone })
+      body: JSON.stringify({ recent_jobs_count: count, refresh_interval: interval, timestamp_format: timestampFormat, cluster_timezone: clusterTimezone, enable_job_cancel: document.getElementById("config-enable-cancel").checked })
     });
 
     const result = await resp.json();
@@ -606,10 +607,99 @@ async function saveConfig() {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    hideContextMenu();
+    closeConfirmModal();
     closeModal();
     closeConfigModal();
   }
 });
+
+/* ── Context Menu & Job Cancel ───────────────────── */
+
+let contextMenuTarget = null; // { server, jobid }
+
+function hideContextMenu() {
+  document.getElementById("context-menu").classList.remove("visible");
+  contextMenuTarget = null;
+}
+
+function closeConfirmModal(event) {
+  if (event && event.target !== document.getElementById("confirm-overlay")) return;
+  document.getElementById("confirm-overlay").classList.remove("active");
+}
+
+document.addEventListener("click", () => hideContextMenu());
+
+document.addEventListener("contextmenu", (e) => {
+  if (!currentConfig.enable_job_cancel) return;
+
+  const btn = e.target.closest(".job-id-copy");
+  if (!btn) return;
+
+  const row = btn.closest("tr[data-jobid]");
+  if (!row) return;
+
+  const section = row.closest(".server-section");
+  if (!section) return;
+
+  const jobid = row.dataset.jobid;
+  const server = section.id.replace("server-", "");
+
+  e.preventDefault();
+  contextMenuTarget = { server, jobid };
+
+  const menu = document.getElementById("context-menu");
+  menu.style.left = e.clientX + "px";
+  menu.style.top = e.clientY + "px";
+  menu.classList.add("visible");
+});
+
+document.getElementById("context-menu-cancel").addEventListener("click", (e) => {
+  e.stopPropagation();
+  hideContextMenu();
+  if (!contextMenuTarget) return;
+
+  const { server, jobid } = contextMenuTarget;
+  document.getElementById("confirm-message").textContent =
+    `Are you sure you want to cancel job ${jobid} on ${server}?`;
+
+  const yesBtn = document.getElementById("confirm-yes-btn");
+  // Replace button to clear old listeners
+  const newBtn = yesBtn.cloneNode(true);
+  yesBtn.parentNode.replaceChild(newBtn, yesBtn);
+  newBtn.addEventListener("click", () => confirmCancelJob(server, jobid));
+
+  document.getElementById("confirm-overlay").classList.add("active");
+});
+
+async function confirmCancelJob(server, jobid) {
+  const btn = document.getElementById("confirm-yes-btn");
+  btn.disabled = true;
+  btn.textContent = "Cancelling\u2026";
+
+  try {
+    const resp = await fetch("/api/job/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ server, jobid }),
+    });
+    const data = await resp.json();
+
+    closeConfirmModal();
+
+    if (data.success) {
+      fetchJobs();
+    } else {
+      alert("Failed to cancel job: " + (data.error || "Unknown error"));
+    }
+  } catch (err) {
+    closeConfirmModal();
+    alert("Failed to cancel job: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Cancel Job";
+  }
+}
 
 /* ── Modal ───────────────────────────────────────────── */
 

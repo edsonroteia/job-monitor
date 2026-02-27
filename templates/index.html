@@ -87,10 +87,37 @@
         <input type="number" id="config-recent-count" class="config-input" min="1" max="50" value="5">
         <div class="config-hint">Show between 1 and 50 recently finished jobs per server</div>
       </div>
+      <div class="config-section">
+        <label class="config-checkbox-label">
+          <input type="checkbox" id="config-enable-cancel">
+          Enable job cancellation
+        </label>
+        <div class="config-hint">Right-click a Job ID to cancel running or pending jobs via scancel</div>
+      </div>
       <div class="config-error" id="config-error"></div>
       <div class="config-actions">
         <button class="config-save-btn" onclick="saveConfig()">Save</button>
         <button class="config-cancel-btn" onclick="closeConfigModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="context-menu" id="context-menu">
+  <button class="context-menu-item context-menu-danger" id="context-menu-cancel">Cancel Job</button>
+</div>
+
+<div class="modal-overlay" id="confirm-overlay" onclick="closeConfirmModal(event)">
+  <div class="modal confirm-modal">
+    <div class="modal-header">
+      <h3>Cancel Job</h3>
+      <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message"></p>
+      <div class="config-actions">
+        <button class="confirm-danger-btn" id="confirm-yes-btn">Cancel Job</button>
+        <button class="config-cancel-btn" onclick="closeConfirmModal()">Keep Running</button>
       </div>
     </div>
   </div>

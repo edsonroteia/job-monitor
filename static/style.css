@@ -1255,6 +1255,105 @@ body.show-all-columns td[data-col] {
   }
 }
 
+/* ── Context menu ──────────────────────────────── */
+
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(42, 37, 32, 0.15), 0 2px 6px rgba(42, 37, 32, 0.08);
+  padding: 0.25rem;
+  min-width: 140px;
+  display: none;
+}
+
+.context-menu.visible {
+  display: block;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  font-family: var(--font);
+  font-size: 0.82rem;
+  font-weight: 500;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: background 0.1s, color 0.1s;
+}
+
+.context-menu-item:hover {
+  background: var(--bg);
+}
+
+.context-menu-danger {
+  color: var(--failed-fg);
+}
+
+.context-menu-danger:hover {
+  background: var(--failed-bg);
+}
+
+/* ── Confirm modal ────────────────────────────── */
+
+.confirm-modal {
+  width: min(90vw, 400px);
+}
+
+.confirm-modal .modal-body p {
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.confirm-danger-btn {
+  padding: 0.5rem 1.25rem;
+  font-family: var(--font);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--failed-fg);
+  color: #fff;
+}
+
+.confirm-danger-btn:hover {
+  opacity: 0.9;
+}
+
+.confirm-danger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Config checkbox ──────────────────────────── */
+
+.config-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.config-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ── Reduced motion ─────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

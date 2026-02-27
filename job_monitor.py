@@ -663,6 +663,11 @@ def api_update_config():
             if not isinstance(tz, str) or len(tz) > 50:
                 return jsonify({"error": "Invalid cluster_timezone"}), 400
 
+        # Validate enable_job_cancel
+        if "enable_job_cancel" in new_config:
+            if not isinstance(new_config["enable_job_cancel"], bool):
+                return jsonify({"error": "enable_job_cancel must be a boolean"}), 400
+
         config = load_config()
         config.update(new_config)
 
@@ -672,6 +677,34 @@ def api_update_config():
             return jsonify({"error": "Failed to save config"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/job/cancel", methods=["POST"])
+def api_cancel_job():
+    config = load_config()
+    if not config.get("enable_job_cancel", False):
+        return jsonify({"error": "Job cancellation is disabled"}), 403
+
+    data = request.json or {}
+    server = data.get("server", "")
+    jobid = data.get("jobid", "")
+
+    if server not in config.get("servers", DEFAULT_CONFIG["servers"]):
+        return jsonify({"error": "Unknown server"}), 400
+    if not jobid or not all(c.isdigit() or c == '_' for c in jobid):
+        return jsonify({"error": "Invalid job ID"}), 400
+
+    try:
+        cmd = _ssh_cmd(server, f"scancel {shlex.quote(jobid)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode != 0:
+            err = _compact_cmd_error(result.stderr, result.returncode)
+            return jsonify({"error": f"scancel failed: {err}"}), 500
+        return jsonify({"success": True, "message": f"Job {jobid} cancelled on {server}"})
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "SSH connection timed out"}), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/job-gpu-status")

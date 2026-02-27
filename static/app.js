@@ -656,10 +656,9 @@ document.addEventListener("contextmenu", (e) => {
 
 document.getElementById("context-menu-cancel").addEventListener("click", (e) => {
   e.stopPropagation();
-  hideContextMenu();
   if (!contextMenuTarget) return;
-
   const { server, jobid } = contextMenuTarget;
+  hideContextMenu();
   document.getElementById("confirm-message").textContent =
     `Are you sure you want to cancel job ${jobid} on ${server}?`;
 
